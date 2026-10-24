@@ -182,6 +182,6 @@ Write-Host ''
 Write-Host 'Next steps' -ForegroundColor White
 Write-Host '  plot-launcher settings set-base-directory "$HOME\plot-workspaces"'
 Write-Host '  plot-launcher settings set-editor "code --reuse-window"'
-Write-Host '  plot-launcher serve'
+Write-Host '  plot-launcher'
 Write-Host ''
 Write-Host "Upgrade later by running this installer again; uninstall by deleting $target."

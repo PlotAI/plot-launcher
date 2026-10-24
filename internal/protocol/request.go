@@ -1,6 +1,6 @@
 // Package protocol implements the Protocol Handler application interface. It
-// receives "Open In Editor Requested" browser requests over HTTP or as a
-// plot-launcher URL and hands them to the Plot Launcher.
+// receives "Open In Editor Requested" browser requests over HTTP and hands them
+// to the Plot Launcher.
 package protocol
 
 import (
@@ -12,10 +12,6 @@ import (
 
 	"github.com/PlotAI/plot-launcher/internal/repository"
 )
-
-// Scheme is the launcher protocol scheme used by browsers and the operating
-// system protocol registration.
-const Scheme = "plot-launcher"
 
 // EventOpenInEditorRequested is the application event that triggers the
 // Protocol Handler to receive a browser request.
@@ -37,25 +33,6 @@ func (r OpenRequest) PullRequest() (repository.PullRequest, error) {
 func (r OpenRequest) Validate() error {
 	_, err := r.PullRequest()
 	return err
-}
-
-// ParseURL parses a plot-launcher://open?repository=owner/name&pull_request=1
-// URL.
-func ParseURL(rawURL string) (OpenRequest, error) {
-	parsed, err := url.Parse(rawURL)
-	if err != nil {
-		return OpenRequest{}, fmt.Errorf("parse launcher URL: %w", err)
-	}
-	if parsed.Scheme != Scheme {
-		return OpenRequest{}, fmt.Errorf("launcher URL must use the %s scheme", Scheme)
-	}
-	if parsed.Host != "open" {
-		return OpenRequest{}, fmt.Errorf("unsupported launcher action %q", parsed.Host)
-	}
-	if parsed.Path != "" && parsed.Path != "/" {
-		return OpenRequest{}, fmt.Errorf("unsupported launcher path %q", parsed.Path)
-	}
-	return ParseQuery(parsed.Query())
 }
 
 // ParseQuery parses an Open In Editor Requested request from query values. A

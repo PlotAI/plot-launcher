@@ -5,10 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"os"
 	"os/signal"
 	"strings"
@@ -23,27 +23,26 @@ import (
 )
 
 const (
-	defaultHost = "::"
-	defaultPort = 8765
+	// Plot Launcher is a local companion to Plot, so it always listens where
+	// Plot expects to find it.
+	listenHost = "127.0.0.1"
+	listenPort = 8765
 )
 
 const usage = `Plot Launcher
 
 Usage:
-  plot-launcher <command> [arguments]
+  plot-launcher [command]
+
+Run plot-launcher without a command to start the Protocol Handler on
+http://127.0.0.1:8765. It runs in the foreground until it is stopped.
 
 Commands:
-  open <launcher-url>                        Receive an Open In Editor Requested request
-  open --repository <owner/name> --pull-request <number>
-                                             Receive an open request from flags
-  serve [--host <host>] [--port <port>]      Run the Protocol Handler for browser requests
+  serve                                      Start the Protocol Handler (default)
   settings show                              Print Launcher Settings as JSON
   settings set-editor <command>              Set editor
   settings set-base-directory <path>         Set base directory
   version                                    Print the Plot Launcher version
-
-Launcher URL:
-  plot-launcher://open?repository=<owner/name>&pull_request=<number>
 `
 
 // Runner executes Plot Launcher commands.
@@ -53,6 +52,7 @@ type Runner struct {
 	logger   *slog.Logger
 	settings *settings.Manager
 	launcher *launcher.Launcher
+	listen   func() (net.Listener, error)
 }
 
 // NewRunner returns a Runner backed by the user's Launcher Settings, the
@@ -69,21 +69,26 @@ func NewRunner(stdout, stderr io.Writer) (*Runner, error) {
 		logger:   logger,
 		settings: settingsManager,
 		launcher: launcher.New(settingsManager, repository.NewGitHubController(), editor.NewLauncher(stdout, stderr)),
+		listen: func() (net.Listener, error) {
+			return protocol.Listen(listenHost, listenPort)
+		},
 	}, nil
 }
 
-// Run executes args and returns the process exit code.
+// Run executes args and returns the process exit code. Running plot-launcher
+// without a command starts the Protocol Handler.
 func (r *Runner) Run(ctx context.Context, args []string) int {
 	if len(args) == 0 {
-		fmt.Fprint(r.stderr, usage)
-		return 2
+		return r.runServe(ctx)
 	}
 
 	switch args[0] {
-	case "open":
-		return r.runOpen(ctx, args[1:])
 	case "serve":
-		return r.runServe(ctx, args[1:])
+		if len(args) != 1 {
+			fmt.Fprintln(r.stderr, "serve accepts no arguments")
+			return 2
+		}
+		return r.runServe(ctx)
 	case "settings":
 		return r.runSettings(args[1:])
 	case "version", "-v", "--version":
@@ -93,89 +98,25 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 		fmt.Fprint(r.stdout, usage)
 		return 0
 	default:
-		// An operating system protocol invocation passes the launcher URL as
-		// the first argument.
-		if strings.HasPrefix(args[0], protocol.Scheme+":") {
-			return r.runOpen(ctx, args)
-		}
 		fmt.Fprintf(r.stderr, "unknown command %q\n\n%s", args[0], usage)
 		return 2
 	}
 }
 
-func (r *Runner) runOpen(ctx context.Context, args []string) int {
-	flags := flag.NewFlagSet("open", flag.ContinueOnError)
-	flags.SetOutput(r.stderr)
-	repositoryFlag := flags.String("repository", "", "repository as owner/name")
-	pullRequestFlag := flags.Int("pull-request", 0, "pull request number")
-	if err := flags.Parse(args); err != nil {
-		return flagExitCode(err)
-	}
-
-	var pullRequest repository.PullRequest
-	switch flags.NArg() {
-	case 0:
-		if *repositoryFlag == "" && *pullRequestFlag == 0 {
-			fmt.Fprintln(r.stderr, "open requires a launcher URL or --repository and --pull-request")
-			return 2
-		}
-		resolved, err := repository.NewPullRequest(*repositoryFlag, *pullRequestFlag)
-		if err != nil {
-			fmt.Fprintf(r.stderr, "open: %v\n", err)
-			return 2
-		}
-		pullRequest = resolved
-	case 1:
-		if *repositoryFlag != "" || *pullRequestFlag != 0 {
-			fmt.Fprintln(r.stderr, "open accepts either a launcher URL or --repository and --pull-request, not both")
-			return 2
-		}
-		openRequest, err := protocol.ParseURL(flags.Arg(0))
-		if err != nil {
-			fmt.Fprintf(r.stderr, "open: %v\n", err)
-			return 2
-		}
-		resolved, err := openRequest.PullRequest()
-		if err != nil {
-			fmt.Fprintf(r.stderr, "open: %v\n", err)
-			return 2
-		}
-		pullRequest = resolved
-	default:
-		fmt.Fprintln(r.stderr, "open accepts a single launcher URL")
-		return 2
-	}
-
-	workingDirectory, err := r.launcher.OpenInEditor(ctx, pullRequest)
-	if err != nil {
-		fmt.Fprintf(r.stderr, "open: %v\n", err)
-		return 1
-	}
-	return r.writeJSON(protocol.NewOpenResult(pullRequest, workingDirectory))
-}
-
-func (r *Runner) runServe(ctx context.Context, args []string) int {
-	flags := flag.NewFlagSet("serve", flag.ContinueOnError)
-	flags.SetOutput(r.stderr)
-	host := flags.String("host", defaultHost, "host to listen on")
-	port := flags.Int("port", defaultPort, "port to listen on")
-	if err := flags.Parse(args); err != nil {
-		return flagExitCode(err)
-	}
-	if flags.NArg() != 0 {
-		fmt.Fprintln(r.stderr, "serve accepts no positional arguments")
-		return 2
-	}
-
+func (r *Runner) runServe(ctx context.Context) int {
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	listener, err := protocol.Listen(*host, *port)
+	listener, err := r.listen()
 	if err != nil {
-		fmt.Fprintf(r.stderr, "serve: %v\n", err)
+		if errors.Is(err, syscall.EADDRINUSE) {
+			fmt.Fprintf(r.stderr, "plot-launcher: another Plot Launcher is already listening on http://%s:%d\n", listenHost, listenPort)
+			return 1
+		}
+		fmt.Fprintf(r.stderr, "plot-launcher: %v\n", err)
 		return 1
 	}
-	r.logger.Info("protocol handler listening",
+	r.logger.Info("plot launcher listening",
 		"address", listener.Addr().String(),
 		"version", version.Version,
 		"event", protocol.EventOpenInEditorRequested,
@@ -183,7 +124,7 @@ func (r *Runner) runServe(ctx context.Context, args []string) int {
 
 	server := protocol.NewServer(protocol.NewHandler(r.launcher, r.logger))
 	if err := protocol.Serve(ctx, listener, server); err != nil {
-		fmt.Fprintf(r.stderr, "serve: %v\n", err)
+		fmt.Fprintf(r.stderr, "plot-launcher: %v\n", err)
 		return 1
 	}
 	return 0
@@ -246,11 +187,4 @@ func (r *Runner) writeJSON(value any) int {
 		return 1
 	}
 	return 0
-}
-
-func flagExitCode(err error) int {
-	if errors.Is(err, flag.ErrHelp) {
-		return 0
-	}
-	return 2
 }

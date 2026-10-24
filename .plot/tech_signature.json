@@ -8,8 +8,8 @@
   "build_commands": ["go mod download", "CGO_ENABLED=0 go build -o bin/plot-launcher ./cmd/plot-launcher"],
   "test_server": {
     "setup_commands": ["mkdir -p .runtime/config .runtime/workspaces", "go mod download", "CGO_ENABLED=0 go build -o bin/plot-launcher ./cmd/plot-launcher", "XDG_CONFIG_HOME=$PWD/.runtime/config ./bin/plot-launcher settings set-base-directory $PWD/.runtime/workspaces", "XDG_CONFIG_HOME=$PWD/.runtime/config ./bin/plot-launcher settings set-editor /usr/bin/true"],
-    "launch_command": "XDG_CONFIG_HOME=$PWD/.runtime/config ./bin/plot-launcher serve --host :: --port 8765",
-    "host": "::",
+    "launch_command": "XDG_CONFIG_HOME=$PWD/.runtime/config ./bin/plot-launcher",
+    "host": "127.0.0.1",
     "port": 8765
   }
 }

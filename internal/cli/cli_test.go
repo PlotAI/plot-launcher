@@ -4,10 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func newTestRunner(t *testing.T) (*Runner, *bytes.Buffer, *bytes.Buffer) {
@@ -105,34 +109,6 @@ func TestSettingsShowRejectsMalformedSettings(t *testing.T) {
 	}
 }
 
-func TestOpenDispatchesLauncherURLBeforeCheckout(t *testing.T) {
-	runner, _, stderr := newTestRunner(t)
-	code := runner.Run(context.Background(), []string{"plot-launcher://open?repository=owner/name&pull_request=7"})
-	if code != 1 {
-		t.Fatalf("exit code = %d, want 1: %s", code, stderr)
-	}
-	if !strings.Contains(stderr.String(), "base directory is not set") {
-		t.Fatalf("stderr = %q, want the missing settings error", stderr.String())
-	}
-}
-
-func TestOpenRejectsInvalidArguments(t *testing.T) {
-	runner, _, _ := newTestRunner(t)
-
-	tests := [][]string{
-		{"open"},
-		{"open", "not-a-launcher-url"},
-		{"open", "--repository", "owner/name"},
-		{"open", "plot-launcher://open?repository=owner/name&pull_request=0"},
-		{"open", "plot-launcher://open?repository=owner/name&pull_request=7", "--repository", "owner/name"},
-	}
-	for _, args := range tests {
-		if code := runner.Run(context.Background(), args); code != 2 {
-			t.Fatalf("%v exit code = %d, want 2", args, code)
-		}
-	}
-}
-
 func TestHelpAndUnknownCommand(t *testing.T) {
 	runner, stdout, stderr := newTestRunner(t)
 
@@ -162,6 +138,87 @@ func TestVersion(t *testing.T) {
 		}
 		if !strings.HasPrefix(stdout.String(), "plot-launcher ") {
 			t.Fatalf("%v stdout = %q, want a version line", args, stdout.String())
+		}
+	}
+}
+
+func TestDefaultCommandStartsProtocolHandler(t *testing.T) {
+	runner, _, stderr := newTestRunner(t)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	runner.listen = func() (net.Listener, error) { return listener, nil }
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan int, 1)
+	go func() { done <- runner.Run(ctx, nil) }()
+
+	response := getWithRetry(t, "http://"+listener.Addr().String()+"/")
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		cancel()
+		t.Fatalf("status = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+
+	cancel()
+	if code := <-done; code != 0 {
+		t.Fatalf("exit code = %d, want 0: %s", code, stderr)
+	}
+}
+
+func getWithRetry(t *testing.T, target string) *http.Response {
+	t.Helper()
+	client := &http.Client{Timeout: 2 * time.Second}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		response, err := client.Get(target)
+		if err == nil {
+			return response
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("GET %s: %v", target, err)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+func TestServeCommandIsAnAlias(t *testing.T) {
+	runner, _, stderr := newTestRunner(t)
+	runner.listen = func() (net.Listener, error) { return nil, errors.New("listen failed") }
+
+	if code := runner.Run(context.Background(), []string{"serve"}); code != 1 {
+		t.Fatalf("serve exit code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "listen failed") {
+		t.Fatalf("stderr = %q, want the listen error", stderr.String())
+	}
+}
+
+func TestServeRejectsArguments(t *testing.T) {
+	runner, _, _ := newTestRunner(t)
+
+	for _, args := range [][]string{
+		{"serve", "--host", "::"},
+		{"serve", "--port", "9000"},
+		{"serve", "extra"},
+	} {
+		if code := runner.Run(context.Background(), args); code != 2 {
+			t.Fatalf("%v exit code = %d, want 2", args, code)
+		}
+	}
+}
+
+func TestOpenCommandIsRemoved(t *testing.T) {
+	runner, _, _ := newTestRunner(t)
+
+	for _, args := range [][]string{
+		{"open", "plot-launcher://open?repository=owner/name&pull_request=1"},
+		{"open", "--repository", "owner/name", "--pull-request", "1"},
+		{"plot-launcher://open?repository=owner/name&pull_request=1"},
+	} {
+		if code := runner.Run(context.Background(), args); code != 2 {
+			t.Fatalf("%v exit code = %d, want 2", args, code)
 		}
 	}
 }

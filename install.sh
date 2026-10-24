@@ -326,5 +326,5 @@ esac
 printf '\n%sNext steps%s\n' "$bold" "$reset"
 printf '  plot-launcher settings set-base-directory ~/plot-workspaces\n'
 printf '  plot-launcher settings set-editor "code --reuse-window"\n'
-printf '  plot-launcher serve\n'
+printf '  plot-launcher\n'
 printf '\nUpgrade later by running this installer again; uninstall with\n  rm %s\n' "$TARGET"

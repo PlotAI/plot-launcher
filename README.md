@@ -33,7 +33,7 @@ Pin a version or choose an installation directory:
 
 ```sh
 curl -fsSL https://github.com/PlotAI/plot-launcher/releases/latest/download/install.sh \
-  | sh -s -- --version v0.1.2 --dir "$HOME/bin"
+  | sh -s -- --version v0.1.3 --dir "$HOME/bin"
 ```
 
 `install.sh` accepts `--version <tag>`, `--dir <path>`, and `--help`. It also
@@ -46,17 +46,17 @@ When the release repository is private, download the installer with the GitHub
 CLI and give it a token so it can read the release assets:
 
 ```sh
-gh release download v0.1.2 --repo PlotAI/plot-launcher --pattern install.sh
+gh release download v0.1.3 --repo PlotAI/plot-launcher --pattern install.sh
 GITHUB_TOKEN=$(gh auth token) sh install.sh
 ```
 
 Verifying by hand works too:
 
 ```sh
-curl -fsSLO https://github.com/PlotAI/plot-launcher/releases/download/v0.1.2/plot-launcher_0.1.2_darwin_arm64.tar.gz
-curl -fsSLO https://github.com/PlotAI/plot-launcher/releases/download/v0.1.2/checksums.txt
-grep plot-launcher_0.1.2_darwin_arm64.tar.gz checksums.txt
-shasum -a 256 plot-launcher_0.1.2_darwin_arm64.tar.gz
+curl -fsSLO https://github.com/PlotAI/plot-launcher/releases/download/v0.1.3/plot-launcher_0.1.3_darwin_arm64.tar.gz
+curl -fsSLO https://github.com/PlotAI/plot-launcher/releases/download/v0.1.3/checksums.txt
+grep plot-launcher_0.1.3_darwin_arm64.tar.gz checksums.txt
+shasum -a 256 plot-launcher_0.1.3_darwin_arm64.tar.gz
 ```
 
 Upgrade by running the installer again. Uninstall by deleting the binary, for
@@ -71,8 +71,8 @@ plot-launcher version
 ## Components
 
 - **Plot Launcher** (`internal/launcher`) orchestrates the open flow.
-- **Protocol Handler** (`internal/protocol`) receives browser requests over HTTP
-  and `plot-launcher://` URLs. `Open In Editor Requested` triggers the flow.
+- **Protocol Handler** (`internal/protocol`) receives browser requests over
+  HTTP on `127.0.0.1:8765`. `Open In Editor Requested` triggers the flow.
 - **Repository Controller** (`internal/repository`) checks out a pull request and
   prepares its working directory. The **GitHub Controller** is its GitHub
   specialization and uses `git` to fetch `refs/pull/<number>/head`.
@@ -119,36 +119,32 @@ configuration.
 
 ## Open In Editor Requested
 
-Run the Protocol Handler for browser requests:
+Plot Launcher is the headless companion to Plot. Run it with no command and it
+serves browser requests on `http://127.0.0.1:8765` until it is stopped:
 
 ```sh
-plot-launcher serve --host :: --port 8765
+plot-launcher
 ```
+
+It always uses that loopback address and port, so there is nothing to configure
+and no way to expose it to another host. Stop it with `Ctrl-C` or `SIGTERM`;
+starting a second instance reports that one is already listening.
 
 Then request a pull request by URL:
 
 ```text
-GET http://localhost:8765/open?url=<https://github.com/owner/name/pull/number>
+GET http://127.0.0.1:8765/open?url=<https://github.com/owner/name/pull/number>
 ```
 
 or by repository and number:
 
 ```text
-GET http://localhost:8765/open?repository=<owner/name>&pull_request=<number>
+GET http://127.0.0.1:8765/open?repository=<owner/name>&pull_request=<number>
 ```
 
 A `url` request must name a `github.com` pull request; trailing path segments
 and query values, such as the links to a pull request's files or commits, are
 accepted. Supplying both forms in one request is rejected.
-
-An operating system protocol invocation passes the launcher URL directly to the
-CLI:
-
-```sh
-plot-launcher "plot-launcher://open?url=https%3A%2F%2Fgithub.com%2Fowner%2Fname%2Fpull%2F42"
-plot-launcher "plot-launcher://open?repository=owner/name&pull_request=42"
-plot-launcher open --repository owner/name --pull-request 42
-```
 
 Successful requests return the prepared working directory as JSON.
 
