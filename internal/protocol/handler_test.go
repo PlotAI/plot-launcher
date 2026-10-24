@@ -135,3 +135,22 @@ func TestHandlerUnknownPath(t *testing.T) {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusNotFound)
 	}
 }
+
+func TestHandlerOpenInEditorAcceptsPullRequestURL(t *testing.T) {
+	opener := &fakeOpener{workingDirectory: "/workspace/owner/name/pull-7"}
+	handler := newTestHandler(opener)
+
+	request := httptest.NewRequest(http.MethodGet, "/open?url=https%3A%2F%2Fgithub.com%2FPlotCustomer%2Fmenu%2Fpull%2F6", nil)
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", recorder.Code, http.StatusOK, recorder.Body.String())
+	}
+	if opener.calls != 1 {
+		t.Fatalf("opener calls = %d, want 1", opener.calls)
+	}
+	if opener.pullRequest.Repository() != "PlotCustomer/menu" || opener.pullRequest.Number != 6 {
+		t.Fatalf("opener pull request = %+v", opener.pullRequest)
+	}
+}

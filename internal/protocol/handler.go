@@ -72,7 +72,8 @@ func (h *Handler) receiveBrowserRequest(writer http.ResponseWriter, request *htt
 		return
 	}
 	writer.Write([]byte("Plot Launcher protocol handler\n" +
-		"Send an \"" + EventOpenInEditorRequested + "\" request to /open?repository=<owner/name>&pull_request=<number>.\n"))
+		"Send an \"" + EventOpenInEditorRequested + "\" request to /open?url=<pull request URL>\n" +
+		"or to /open?repository=<owner/name>&pull_request=<number>.\n"))
 }
 
 func (h *Handler) openInEditor(writer http.ResponseWriter, request *http.Request) {

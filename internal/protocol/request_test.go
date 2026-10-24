@@ -82,3 +82,76 @@ func TestParseQueryRejectsMissingFields(t *testing.T) {
 		t.Fatal("ParseQuery without repository returned no error")
 	}
 }
+
+func TestParseQueryAcceptsPullRequestURL(t *testing.T) {
+	tests := []struct {
+		name       string
+		rawURL     string
+		repository string
+		number     int
+	}{
+		{"canonical", "https://github.com/PlotCustomer/menu/pull/6", "PlotCustomer/menu", 6},
+		{"trailing slash", "https://github.com/PlotCustomer/menu/pull/6/", "PlotCustomer/menu", 6},
+		{"files tab", "https://github.com/PlotCustomer/menu/pull/6/files", "PlotCustomer/menu", 6},
+		{"query string", "https://github.com/PlotCustomer/menu/pull/6?diff=split", "PlotCustomer/menu", 6},
+		{"http scheme", "http://github.com/PlotCustomer/menu/pull/6", "PlotCustomer/menu", 6},
+		{"www host", "https://www.github.com/PlotCustomer/menu/pull/6", "PlotCustomer/menu", 6},
+		{"surrounding space", " https://github.com/PlotCustomer/menu/pull/6 ", "PlotCustomer/menu", 6},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			parsed, err := ParseQuery(url.Values{"url": {test.rawURL}})
+			if err != nil {
+				t.Fatalf("ParseQuery(%q): %v", test.rawURL, err)
+			}
+			if parsed.Repository != test.repository {
+				t.Fatalf("Repository = %q, want %q", parsed.Repository, test.repository)
+			}
+			if parsed.PullRequestNumber != test.number {
+				t.Fatalf("PullRequestNumber = %d, want %d", parsed.PullRequestNumber, test.number)
+			}
+		})
+	}
+}
+
+func TestParseQueryRejectsInvalidPullRequestURLs(t *testing.T) {
+	tests := map[string]url.Values{
+		"empty":              {"url": {""}},
+		"other host":         {"url": {"https://gitlab.com/owner/name/pull/1"}},
+		"missing pull":       {"url": {"https://github.com/owner/name"}},
+		"issue instead":      {"url": {"https://github.com/owner/name/issues/1"}},
+		"non-numeric number": {"url": {"https://github.com/owner/name/pull/zero"}},
+		"zero number":        {"url": {"https://github.com/owner/name/pull/0"}},
+		"path traversal":     {"url": {"https://github.com/owner/../pull/1"}},
+		"unsupported scheme": {"url": {"ftp://github.com/owner/name/pull/1"}},
+		"mixed with repository": {
+			"url":        {"https://github.com/owner/name/pull/1"},
+			"repository": {"owner/name"},
+		},
+		"mixed with pull_request": {
+			"url":          {"https://github.com/owner/name/pull/1"},
+			"pull_request": {"1"},
+		},
+		"repeated url": {"url": {
+			"https://github.com/owner/name/pull/1",
+			"https://github.com/owner/name/pull/2",
+		}},
+	}
+	for name, values := range tests {
+		t.Run(name, func(t *testing.T) {
+			if _, err := ParseQuery(values); err == nil {
+				t.Fatalf("ParseQuery(%v) returned no error", values)
+			}
+		})
+	}
+}
+
+func TestParseURLAcceptsPullRequestURLQuery(t *testing.T) {
+	parsed, err := ParseURL("plot-launcher://open?url=https%3A%2F%2Fgithub.com%2Fowner%2Fname%2Fpull%2F9")
+	if err != nil {
+		t.Fatalf("ParseURL: %v", err)
+	}
+	if parsed.Repository != "owner/name" || parsed.PullRequestNumber != 9 {
+		t.Fatalf("parsed = %+v", parsed)
+	}
+}

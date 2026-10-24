@@ -125,16 +125,27 @@ Run the Protocol Handler for browser requests:
 plot-launcher serve --host :: --port 8765
 ```
 
-Then request:
+Then request a pull request by URL:
+
+```text
+GET http://localhost:8765/open?url=<https://github.com/owner/name/pull/number>
+```
+
+or by repository and number:
 
 ```text
 GET http://localhost:8765/open?repository=<owner/name>&pull_request=<number>
 ```
 
+A `url` request must name a `github.com` pull request; trailing path segments
+and query values, such as the links to a pull request's files or commits, are
+accepted. Supplying both forms in one request is rejected.
+
 An operating system protocol invocation passes the launcher URL directly to the
 CLI:
 
 ```sh
+plot-launcher "plot-launcher://open?url=https%3A%2F%2Fgithub.com%2Fowner%2Fname%2Fpull%2F42"
 plot-launcher "plot-launcher://open?repository=owner/name&pull_request=42"
 plot-launcher open --repository owner/name --pull-request 42
 ```
