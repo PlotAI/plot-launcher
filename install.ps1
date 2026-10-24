@@ -60,6 +60,7 @@ $headers = @{
 }
 if ($token) { $headers['Authorization'] = "Bearer $token" }
 
+$release = $null
 if ($Version -eq 'latest') {
     Write-Step 'Resolving the latest Plot Launcher release'
     try {
@@ -78,10 +79,30 @@ $asset = "plot-launcher_${versionNumber}_windows_${arch}.zip"
 $baseUrl = "https://github.com/$Repository/releases/download/$tag"
 $tempDir = Join-Path ([System.IO.Path]::GetTempPath()) ("plot-launcher-install-" + [guid]::NewGuid().ToString('N'))
 
+if ($token -and -not $release) {
+    try {
+        $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repository/releases/tags/$tag" -Headers $headers
+    }
+    catch {
+        throw "Could not read release $tag of $Repository. $($_.Exception.Message)"
+    }
+}
+
 function Get-ReleaseAsset([string]$Name) {
     $target = Join-Path $tempDir $Name
+    if ($release) {
+        $assetInfo = $release.assets | Where-Object { $_.name -eq $Name } | Select-Object -First 1
+        if (-not $assetInfo) { throw "release $tag does not contain $Name" }
+        $assetHeaders = @{
+            'Accept'        = 'application/octet-stream'
+            'User-Agent'    = 'plot-launcher-installer'
+            'Authorization' = "Bearer $token"
+        }
+        Invoke-WebRequest -Uri $assetInfo.url -Headers $assetHeaders -OutFile $target -UseBasicParsing
+        return $target
+    }
     try {
-        Invoke-WebRequest -Uri "$baseUrl/$Name" -Headers $headers -OutFile $target -UseBasicParsing
+        Invoke-WebRequest -Uri "$baseUrl/$Name" -OutFile $target -UseBasicParsing
         return $target
     }
     catch {
@@ -91,7 +112,7 @@ function Get-ReleaseAsset([string]$Name) {
             & $gh.Source release download $tag --repo $Repository --pattern $Name --dir $tempDir --clobber
             if (Test-Path $target) { return $target }
         }
-        throw "Could not download $Name from $baseUrl. $($_.Exception.Message)"
+        throw "Could not download $Name from $baseUrl. If the repository is private, set GITHUB_TOKEN. $($_.Exception.Message)"
     }
 }
 

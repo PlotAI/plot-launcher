@@ -149,19 +149,50 @@ fetch() {
 download() {
 	url=$1
 	output=$2
-	if [ "$DOWNLOADER" = curl ]; then
-		if [ -n "$TOKEN" ]; then
+	if [ -n "$TOKEN" ] && [ -z "$RELEASE_BASE_URL" ]; then
+		if [ "$DOWNLOADER" = curl ]; then
 			curl -fsSL --retry 3 --connect-timeout 15 -H "Authorization: Bearer $TOKEN" -o "$output" "$url"
 		else
-			curl -fsSL --retry 3 --connect-timeout 15 -o "$output" "$url"
+			wget -q -O "$output" --header="Authorization: Bearer $TOKEN" "$url"
 		fi
 	else
-		if [ -n "$TOKEN" ]; then
-			wget -q -O "$output" --header="Authorization: Bearer $TOKEN" "$url"
+		if [ "$DOWNLOADER" = curl ]; then
+			curl -fsSL --retry 3 --connect-timeout 15 -o "$output" "$url"
 		else
 			wget -q -O "$output" "$url"
 		fi
 	fi
+}
+
+# download_api fetches a release asset through the API, which is the only way
+# GitHub serves assets of a private repository to a token.
+download_api() {
+	url=$1
+	output=$2
+	if [ "$DOWNLOADER" = curl ]; then
+		curl -fsSL --retry 3 --connect-timeout 15 -H "Authorization: Bearer $TOKEN" -H "Accept: application/octet-stream" -o "$output" "$url"
+	else
+		wget -q -O "$output" --header="Authorization: Bearer $TOKEN" --header="Accept: application/octet-stream" "$url"
+	fi
+}
+
+# asset_id prints the release asset identifier for an asset name.
+asset_id() {
+	printf '%s\n' "$RELEASE_JSON" | awk -v asset="$1" '
+		match($0, /releases\/assets\/[0-9]+/) {
+			id = substr($0, RSTART + 16, RLENGTH - 16)
+		}
+		/"name":/ {
+			name = $0
+			sub(/.*"name": *"/, "", name)
+			sub(/".*/, "", name)
+			if (name == asset && id != "") {
+				print id
+				exit
+			}
+			id = ""
+		}
+	'
 }
 
 case $(uname -s) in
@@ -178,14 +209,15 @@ arm64 | aarch64) arch=arm64 ;;
 *) fail "unsupported architecture: $(uname -m)" ;;
 esac
 
+RELEASE_JSON=
 if [ "$VERSION" = latest ]; then
 	if [ -n "$RELEASE_BASE_URL" ]; then
 		fail "PLOT_LAUNCHER_RELEASE_BASE_URL requires an explicit --version"
 	fi
 	step "Resolving the latest Plot Launcher release"
-	release=$(fetch "https://api.github.com/repos/$REPOSITORY/releases/latest") ||
+	RELEASE_JSON=$(fetch "https://api.github.com/repos/$REPOSITORY/releases/latest") ||
 		fail "could not query releases for $REPOSITORY. If the repository is private, set GITHUB_TOKEN."
-	VERSION=$(printf '%s\n' "$release" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n 1)
+	VERSION=$(printf '%s\n' "$RELEASE_JSON" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n 1)
 	[ -n "$VERSION" ] || fail "could not determine the latest version of $REPOSITORY"
 fi
 
@@ -197,6 +229,11 @@ VERSION_NUMBER=${TAG#v}
 
 ASSET="plot-launcher_${VERSION_NUMBER}_${os}_${arch}.tar.gz"
 BASE_URL=${RELEASE_BASE_URL:-"https://github.com/$REPOSITORY/releases/download/$TAG"}
+
+if [ -z "$RELEASE_BASE_URL" ] && [ -n "$TOKEN" ] && [ -z "$RELEASE_JSON" ]; then
+	RELEASE_JSON=$(fetch "https://api.github.com/repos/$REPOSITORY/releases/tags/$TAG") ||
+		fail "could not read release $TAG of $REPOSITORY"
+fi
 
 TMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/plot-launcher-install.XXXXXX")
 STAGED=
@@ -210,20 +247,27 @@ trap cleanup EXIT HUP INT TERM
 
 download_asset() {
 	asset=$1
-	if download "$BASE_URL/$asset" "$TMP_DIR/$asset" 2>/dev/null; then
+	if [ -n "$TOKEN" ] && [ -z "$RELEASE_BASE_URL" ]; then
+		id=$(asset_id "$asset")
+		[ -n "$id" ] || fail "release $TAG does not contain $asset"
+		download_api "https://api.github.com/repos/$REPOSITORY/releases/assets/$id" "$TMP_DIR/$asset" && return 0
+	elif download "$BASE_URL/$asset" "$TMP_DIR/$asset" 2>/dev/null; then
 		return 0
 	fi
 	if command -v gh >/dev/null 2>&1; then
 		step "Downloading $asset with the GitHub CLI"
-		gh release download "$TAG" --repo "$REPOSITORY" --pattern "$asset" --dir "$TMP_DIR" --clobber >/dev/null 2>&1
-		return 0
+		if gh release download "$TAG" --repo "$REPOSITORY" --pattern "$asset" --dir "$TMP_DIR" --clobber >/dev/null 2>&1; then
+			return 0
+		fi
 	fi
 	return 1
 }
 
 step "Downloading Plot Launcher $TAG for $os/$arch"
-download_asset "$ASSET" || fail "could not download $ASSET from $BASE_URL"
-download_asset checksums.txt || fail "could not download checksums.txt from $BASE_URL"
+download_asset "$ASSET" ||
+	fail "could not download $ASSET. If the repository is private, set GITHUB_TOKEN."
+download_asset checksums.txt ||
+	fail "could not download checksums.txt. If the repository is private, set GITHUB_TOKEN."
 
 expected=$(awk -v name="$ASSET" '$2 == name { print $1 }' "$TMP_DIR/checksums.txt" | head -n 1)
 [ -n "$expected" ] || fail "checksums.txt does not list $ASSET"

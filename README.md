@@ -33,7 +33,7 @@ Pin a version or choose an installation directory:
 
 ```sh
 curl -fsSL https://github.com/PlotAI/plot-launcher/releases/latest/download/install.sh \
-  | sh -s -- --version v0.1.0 --dir "$HOME/bin"
+  | sh -s -- --version v0.1.1 --dir "$HOME/bin"
 ```
 
 `install.sh` accepts `--version <tag>`, `--dir <path>`, and `--help`. It also
@@ -42,22 +42,21 @@ honors `PLOT_LAUNCHER_VERSION`, `PLOT_LAUNCHER_INSTALL_DIR`,
 serving the assets of one tag), `GITHUB_TOKEN`/`GH_TOKEN` (private repository),
 and `NO_COLOR`.
 
-When the release repository is private, authenticate both the script download
-and the installer:
+When the release repository is private, download the installer with the GitHub
+CLI and give it a token so it can read the release assets:
 
 ```sh
-curl -fsSL -H "Authorization: Bearer $GITHUB_TOKEN" \
-  https://github.com/PlotAI/plot-launcher/releases/download/v0.1.0/install.sh \
-  | GITHUB_TOKEN="$GITHUB_TOKEN" sh
+gh release download v0.1.1 --repo PlotAI/plot-launcher --pattern install.sh
+GITHUB_TOKEN=$(gh auth token) sh install.sh
 ```
 
 Verifying by hand works too:
 
 ```sh
-curl -fsSLO https://github.com/PlotAI/plot-launcher/releases/download/v0.1.0/plot-launcher_0.1.0_darwin_arm64.tar.gz
-curl -fsSLO https://github.com/PlotAI/plot-launcher/releases/download/v0.1.0/checksums.txt
-grep plot-launcher_0.1.0_darwin_arm64.tar.gz checksums.txt
-shasum -a 256 plot-launcher_0.1.0_darwin_arm64.tar.gz
+curl -fsSLO https://github.com/PlotAI/plot-launcher/releases/download/v0.1.1/plot-launcher_0.1.1_darwin_arm64.tar.gz
+curl -fsSLO https://github.com/PlotAI/plot-launcher/releases/download/v0.1.1/checksums.txt
+grep plot-launcher_0.1.1_darwin_arm64.tar.gz checksums.txt
+shasum -a 256 plot-launcher_0.1.1_darwin_arm64.tar.gz
 ```
 
 Upgrade by running the installer again. Uninstall by deleting the binary, for
