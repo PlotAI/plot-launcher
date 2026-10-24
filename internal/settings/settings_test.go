@@ -58,21 +58,27 @@ func TestSetBaseDirectoryRejectsInvalidValues(t *testing.T) {
 }
 
 func TestSetEditor(t *testing.T) {
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatalf("resolve test executable: %v", err)
+	}
+	command := executable + " --wait"
+
 	manager := NewManager(filepath.Join(t.TempDir(), "settings.json"))
-	updated, err := manager.SetEditor("/bin/true --wait")
+	updated, err := manager.SetEditor(command)
 	if err != nil {
 		t.Fatalf("SetEditor: %v", err)
 	}
-	if updated.Editor != "/bin/true --wait" {
-		t.Fatalf("Editor = %q, want %q", updated.Editor, "/bin/true --wait")
+	if updated.Editor != command {
+		t.Fatalf("Editor = %q, want %q", updated.Editor, command)
 	}
 
 	loaded, err := manager.Load()
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if loaded.Editor != "/bin/true --wait" {
-		t.Fatalf("loaded Editor = %q, want %q", loaded.Editor, "/bin/true --wait")
+	if loaded.Editor != command {
+		t.Fatalf("loaded Editor = %q, want %q", loaded.Editor, command)
 	}
 }
 

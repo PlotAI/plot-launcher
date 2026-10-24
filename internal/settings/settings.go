@@ -20,6 +20,10 @@ const (
 	settingsFile   = "settings.json"
 	filePermission = 0o600
 	dirPermission  = 0o755
+
+	// configDirectoryEnv relocates Launcher Settings, which keeps portable
+	// installs and isolated test runs out of the user's real configuration.
+	configDirectoryEnv = "PLOT_LAUNCHER_CONFIG_DIR"
 )
 
 // LauncherSettings is the Launcher Settings data object.
@@ -34,7 +38,11 @@ type Manager struct {
 }
 
 // NewDefaultManager returns a Manager for the user configuration directory.
+// PLOT_LAUNCHER_CONFIG_DIR overrides that directory when it is set.
 func NewDefaultManager() (*Manager, error) {
+	if override := strings.TrimSpace(os.Getenv(configDirectoryEnv)); override != "" {
+		return NewManager(filepath.Join(override, settingsFile)), nil
+	}
 	configDirectory, err := os.UserConfigDir()
 	if err != nil {
 		return nil, fmt.Errorf("resolve user configuration directory: %w", err)

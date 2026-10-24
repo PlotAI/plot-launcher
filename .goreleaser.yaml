@@ -1,0 +1,103 @@
+version: 2
+
+project_name: plot-launcher
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: plot-launcher
+    main: ./cmd/plot-launcher
+    binary: plot-launcher
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X github.com/PlotAI/plot-launcher/internal/version.Version=v{{ .Version }}
+      - -X github.com/PlotAI/plot-launcher/internal/version.Commit={{ .Commit }}
+      - -X github.com/PlotAI/plot-launcher/internal/version.Date={{ .CommitDate }}
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - id: archives
+    ids:
+      - plot-launcher
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - README.md
+      - install.sh
+      - install.ps1
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+changelog:
+  use: github
+  sort: asc
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\(.+\))??!?:.+$'
+      order: 0
+    - title: Bug fixes
+      regexp: '^.*?fix(\(.+\))??!?:.+$'
+      order: 1
+    - title: Other changes
+      order: 999
+  filters:
+    exclude:
+      - "^chore:"
+      - "^ci:"
+      - "^docs:"
+      - "^test:"
+
+release:
+  github:
+    owner: PlotAI
+    name: plot-launcher
+  name_template: "Plot Launcher {{ .Tag }}"
+  draft: false
+  prerelease: auto
+  header: |
+    Plot Launcher {{ .Tag }}
+
+    See the [README](https://github.com/PlotAI/plot-launcher#readme) for setup and usage.
+  footer: |
+    ### Install
+
+    macOS and Linux:
+
+    ```sh
+    curl -fsSL https://github.com/PlotAI/plot-launcher/releases/download/{{ .Tag }}/install.sh | sh
+    ```
+
+    Windows (PowerShell):
+
+    ```powershell
+    irm https://github.com/PlotAI/plot-launcher/releases/download/{{ .Tag }}/install.ps1 | iex
+    ```
+
+    Every archive is listed in `checksums.txt`; the installer verifies it before
+    putting the binary on your machine.
+  extra_files:
+    - glob: install.sh
+    - glob: install.ps1
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"

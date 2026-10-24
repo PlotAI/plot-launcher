@@ -12,7 +12,7 @@ import (
 
 func newTestRunner(t *testing.T) (*Runner, *bytes.Buffer, *bytes.Buffer) {
 	t.Helper()
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(t.TempDir(), "config"))
+	t.Setenv("PLOT_LAUNCHER_CONFIG_DIR", filepath.Join(t.TempDir(), "config"))
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 	runner, err := NewRunner(stdout, stderr)
@@ -36,11 +36,12 @@ func TestSettingsSetAndShow(t *testing.T) {
 	runner, stdout, stderr := newTestRunner(t)
 	workingDirectory := t.TempDir()
 	t.Chdir(workingDirectory)
+	editor := testExecutable(t)
 
 	if code := runner.Run(context.Background(), []string{"settings", "set-base-directory", "workspaces"}); code != 0 {
 		t.Fatalf("set-base-directory exit code = %d, want 0: %s", code, stderr)
 	}
-	if code := runner.Run(context.Background(), []string{"settings", "set-editor", "/bin/true", "--wait"}); code != 0 {
+	if code := runner.Run(context.Background(), []string{"settings", "set-editor", editor, "--wait"}); code != 0 {
 		t.Fatalf("set-editor exit code = %d, want 0: %s", code, stderr)
 	}
 
@@ -55,9 +56,19 @@ func TestSettingsSetAndShow(t *testing.T) {
 	if decoded["base_directory"] != filepath.Join(workingDirectory, "workspaces") {
 		t.Fatalf("base_directory = %q, want %q", decoded["base_directory"], filepath.Join(workingDirectory, "workspaces"))
 	}
-	if decoded["editor"] != "/bin/true --wait" {
-		t.Fatalf("editor = %q, want %q", decoded["editor"], "/bin/true --wait")
+	if want := editor + " --wait"; decoded["editor"] != want {
+		t.Fatalf("editor = %q, want %q", decoded["editor"], want)
 	}
+}
+
+// testExecutable returns an executable on every supported platform.
+func testExecutable(t *testing.T) string {
+	t.Helper()
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatalf("resolve test executable: %v", err)
+	}
+	return executable
 }
 
 func TestSettingsRejectsInvalidValues(t *testing.T) {
@@ -78,7 +89,7 @@ func TestSettingsRejectsInvalidValues(t *testing.T) {
 
 func TestSettingsShowRejectsMalformedSettings(t *testing.T) {
 	runner, _, stderr := newTestRunner(t)
-	path := filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "plot-launcher", "settings.json")
+	path := filepath.Join(os.Getenv("PLOT_LAUNCHER_CONFIG_DIR"), "settings.json")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatalf("create config directory: %v", err)
 	}
@@ -138,5 +149,19 @@ func TestHelpAndUnknownCommand(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "unknown command") {
 		t.Fatalf("stderr = %q", stderr.String())
+	}
+}
+
+func TestVersion(t *testing.T) {
+	runner, stdout, stderr := newTestRunner(t)
+
+	for _, args := range [][]string{{"version"}, {"--version"}, {"-v"}} {
+		stdout.Reset()
+		if code := runner.Run(context.Background(), args); code != 0 {
+			t.Fatalf("%v exit code = %d, want 0: %s", args, code, stderr)
+		}
+		if !strings.HasPrefix(stdout.String(), "plot-launcher ") {
+			t.Fatalf("%v stdout = %q, want a version line", args, stdout.String())
+		}
 	}
 }

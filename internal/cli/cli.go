@@ -19,6 +19,7 @@ import (
 	"github.com/PlotAI/plot-launcher/internal/protocol"
 	"github.com/PlotAI/plot-launcher/internal/repository"
 	"github.com/PlotAI/plot-launcher/internal/settings"
+	"github.com/PlotAI/plot-launcher/internal/version"
 )
 
 const (
@@ -39,6 +40,7 @@ Commands:
   settings show                              Print Launcher Settings as JSON
   settings set-editor <command>              Set editor
   settings set-base-directory <path>         Set base directory
+  version                                    Print the Plot Launcher version
 
 Launcher URL:
   plot-launcher://open?repository=<owner/name>&pull_request=<number>
@@ -84,6 +86,9 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 		return r.runServe(ctx, args[1:])
 	case "settings":
 		return r.runSettings(args[1:])
+	case "version", "-v", "--version":
+		fmt.Fprintf(r.stdout, "plot-launcher %s\n", version.String())
+		return 0
 	case "help", "-h", "--help":
 		fmt.Fprint(r.stdout, usage)
 		return 0
@@ -172,6 +177,7 @@ func (r *Runner) runServe(ctx context.Context, args []string) int {
 	}
 	r.logger.Info("protocol handler listening",
 		"address", listener.Addr().String(),
+		"version", version.Version,
 		"event", protocol.EventOpenInEditorRequested,
 	)
 
