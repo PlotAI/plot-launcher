@@ -51,8 +51,8 @@ func TestNewPullRequest(t *testing.T) {
 
 func TestWorkingDirectory(t *testing.T) {
 	base := t.TempDir()
-	pullRequest := PullRequest{Owner: "owner", Name: "name", Number: 7}
-	want := filepath.Join(base, "owner", "name", "pull-7")
+	pullRequest := PullRequest{Owner: "owner", Name: "graph-canvas", Number: 23}
+	want := filepath.Join(base, "graph-canvas#pr23")
 	if got := pullRequest.WorkingDirectory(base); got != want {
 		t.Fatalf("WorkingDirectory = %q, want %q", got, want)
 	}
