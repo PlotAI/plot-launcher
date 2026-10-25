@@ -46,7 +46,7 @@ Commands:
 
 A registered browser link opens a pull request directly:
 
-  plot-launcher "plot-launcher://open?url=<pull request URL>"
+  plot-launcher "plot://open?url=<pull request URL>"
 `
 
 // Runner executes Plot Launcher commands.

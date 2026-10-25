@@ -14,7 +14,7 @@ import (
 
 // Scheme is the URL scheme that hands a browser request to the Plot Launcher,
 // so a web page needs no knowledge of the loopback address or port.
-const Scheme = "plot-launcher"
+const Scheme = "plot"
 
 // openHost is the host of a scheme URL that requests an open.
 const openHost = "open"
@@ -24,7 +24,7 @@ func IsSchemeURL(rawURL string) bool {
 	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(rawURL)), Scheme+"://")
 }
 
-// ParseSchemeURL parses a plot-launcher://open request. A request carries
+// ParseSchemeURL parses a plot://open request. A request carries
 // either repository and pull_request, or a single url naming a GitHub pull
 // request.
 func ParseSchemeURL(rawURL string) (OpenRequest, error) {

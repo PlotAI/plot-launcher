@@ -218,7 +218,7 @@ func TestOpenCommandIsRemoved(t *testing.T) {
 
 	// A browser link is handled as a bare argument; there is no open command.
 	for _, args := range [][]string{
-		{"open", "plot-launcher://open?repository=owner/name&pull_request=1"},
+		{"open", "plot://open?repository=owner/name&pull_request=1"},
 		{"open", "--repository", "owner/name", "--pull-request", "1"},
 	} {
 		if code := runner.Run(context.Background(), args); code != 2 {
@@ -255,7 +255,7 @@ func TestSchemeURLOpensPullRequest(t *testing.T) {
 		editors,
 	)
 
-	code := runner.Run(context.Background(), []string{"plot-launcher://open?url=https://github.com/PlotAI/graph-canvas/pull/7"})
+	code := runner.Run(context.Background(), []string{"plot://open?url=https://github.com/PlotAI/graph-canvas/pull/7"})
 	if code != 0 {
 		t.Fatalf("exit code = %d, want 0: %s", code, stderr)
 	}
@@ -270,13 +270,13 @@ func TestSchemeURLOpensPullRequest(t *testing.T) {
 func TestSchemeURLRejectsInvalidRequests(t *testing.T) {
 	runner, _, _ := newTestRunner(t)
 
-	if code := runner.Run(context.Background(), []string{"plot-launcher://open?repository=owner/name"}); code != 2 {
+	if code := runner.Run(context.Background(), []string{"plot://open?repository=owner/name"}); code != 2 {
 		t.Fatalf("exit code = %d, want 2", code)
 	}
-	if code := runner.Run(context.Background(), []string{"plot-launcher://settings?repository=owner/name&pull_request=1"}); code != 2 {
+	if code := runner.Run(context.Background(), []string{"plot://settings?repository=owner/name&pull_request=1"}); code != 2 {
 		t.Fatalf("exit code = %d, want 2", code)
 	}
-	if code := runner.Run(context.Background(), []string{"plot-launcher://open?repository=owner/name&pull_request=1", "extra"}); code != 2 {
+	if code := runner.Run(context.Background(), []string{"plot://open?repository=owner/name&pull_request=1", "extra"}); code != 2 {
 		t.Fatalf("exit code with extra arguments = %d, want 2", code)
 	}
 }

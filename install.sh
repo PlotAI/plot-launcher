@@ -304,22 +304,22 @@ fi
 # page needs no knowledge of the loopback address or port.
 register_scheme() {
 	applications="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
-	desktop="$applications/plot-launcher.desktop"
+	desktop="$applications/plot.desktop"
 	if ! mkdir -p "$applications" 2>/dev/null || ! cat >"$desktop" 2>/dev/null <<EOF
 [Desktop Entry]
 Type=Application
 Name=Plot Launcher
 Exec="$TARGET" %u
 Terminal=false
-MimeType=x-scheme-handler/plot-launcher
+MimeType=x-scheme-handler/plot
 EOF
 	then
-		warn "could not write $desktop, so plot-launcher:// links stay unregistered"
+		warn "could not write $desktop, so plot:// links stay unregistered"
 		return
 	fi
 	if command -v xdg-mime >/dev/null 2>&1; then
-		xdg-mime default plot-launcher.desktop x-scheme-handler/plot-launcher 2>/dev/null ||
-			warn "could not make Plot Launcher the plot-launcher:// handler"
+		xdg-mime default plot.desktop x-scheme-handler/plot 2>/dev/null ||
+			warn "could not make Plot Launcher the plot:// handler"
 	fi
 	if command -v update-desktop-database >/dev/null 2>&1; then
 		update-desktop-database "$applications" >/dev/null 2>&1 || true

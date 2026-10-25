@@ -100,11 +100,11 @@ func TestParseSchemeURL(t *testing.T) {
 		repository string
 		number     int
 	}{
-		{"pull request url", "plot-launcher://open?url=https://github.com/owner/name/pull/7", "owner/name", 7},
-		{"encoded pull request url", "plot-launcher://open?url=https%3A%2F%2Fgithub.com%2Fowner%2Fname%2Fpull%2F7", "owner/name", 7},
-		{"repository and number", "plot-launcher://open?repository=owner/name&pull_request=7", "owner/name", 7},
-		{"trailing slash", "plot-launcher://open/?repository=owner/name&pull_request=7", "owner/name", 7},
-		{"uppercase scheme", "PLOT-LAUNCHER://open?repository=owner/name&pull_request=7", "owner/name", 7},
+		{"pull request url", "plot://open?url=https://github.com/owner/name/pull/7", "owner/name", 7},
+		{"encoded pull request url", "plot://open?url=https%3A%2F%2Fgithub.com%2Fowner%2Fname%2Fpull%2F7", "owner/name", 7},
+		{"repository and number", "plot://open?repository=owner/name&pull_request=7", "owner/name", 7},
+		{"trailing slash", "plot://open/?repository=owner/name&pull_request=7", "owner/name", 7},
+		{"uppercase scheme", "PLOT://open?repository=owner/name&pull_request=7", "owner/name", 7},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -122,12 +122,12 @@ func TestParseSchemeURL(t *testing.T) {
 func TestParseSchemeURLRejectsInvalidURLs(t *testing.T) {
 	tests := map[string]string{
 		"wrong scheme":          "https://github.com/owner/name/pull/7",
-		"wrong host":            "plot-launcher://settings?repository=owner/name&pull_request=7",
-		"unexpected path":       "plot-launcher://open/settings?repository=owner/name&pull_request=7",
-		"missing parameters":    "plot-launcher://open",
-		"missing number":        "plot-launcher://open?repository=owner/name",
-		"non-numeric number":    "plot-launcher://open?repository=owner/name&pull_request=zero",
-		"unsupported pull host": "plot-launcher://open?url=https://example.com/owner/name/pull/7",
+		"wrong host":            "plot://settings?repository=owner/name&pull_request=7",
+		"unexpected path":       "plot://open/settings?repository=owner/name&pull_request=7",
+		"missing parameters":    "plot://open",
+		"missing number":        "plot://open?repository=owner/name",
+		"non-numeric number":    "plot://open?repository=owner/name&pull_request=zero",
+		"unsupported pull host": "plot://open?url=https://example.com/owner/name/pull/7",
 	}
 	for name, rawURL := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -140,11 +140,11 @@ func TestParseSchemeURLRejectsInvalidURLs(t *testing.T) {
 
 func TestIsSchemeURL(t *testing.T) {
 	tests := map[string]bool{
-		"plot-launcher://open?repository=owner/name&pull_request=7": true,
-		"  plot-launcher://open":                                    true,
-		"https://github.com/owner/name/pull/7":                      false,
-		"plot-launcher":                                             false,
-		"serve":                                                     false,
+		"plot://open?repository=owner/name&pull_request=7": true,
+		"  plot://open":                        true,
+		"https://github.com/owner/name/pull/7": false,
+		"plot-launcher":                        false,
+		"serve":                                false,
 	}
 	for rawURL, want := range tests {
 		if got := IsSchemeURL(rawURL); got != want {
