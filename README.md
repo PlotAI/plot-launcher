@@ -1,12 +1,10 @@
 # Plot Launcher
 
-Plot Launcher is the Go/CLI application that opens a pull request in your editor.
-A browser sends a request to the Protocol Handler, the Repository Controller checks out the pull request and prepares its working directory, and the Editor Launcher starts the configured editor there.
+Plot Launcher is the Go/CLI companion to Plot. Run `plot-launcher` and it listens on `http://127.0.0.1:8765`, opening a pull request in your editor when Plot asks it to.
 
 ## Install
 
-Releases are published for macOS, Linux, and Windows on both `amd64` and
-`arm64`.
+Published for macOS, Linux, and Windows on `amd64` and `arm64`.
 
 macOS and Linux:
 
@@ -20,67 +18,28 @@ Windows (PowerShell):
 Invoke-RestMethod https://github.com/PlotAI/plot-launcher/releases/latest/download/install.ps1 | Invoke-Expression
 ```
 
-`Invoke-RestMethod` fetches the installer and `Invoke-Expression` runs it, the
-PowerShell equivalent of piping `install.sh` into `sh`.
+Both installers verify the archive against the release `checksums.txt` and install `plot-launcher` into `~/.local/bin` (`%LOCALAPPDATA%\Plot\bin` on Windows). Re-run the installer to upgrade, or delete the binary to uninstall.
 
-The installer resolves the latest release (or a pinned `--version`), downloads
-the archive for your operating system and architecture, verifies it against the
-release's `checksums.txt`, and fails closed on a mismatch. It installs
-`plot-launcher` into `~/.local/bin` (`%LOCALAPPDATA%\Plot\bin` on Windows),
-replacing an existing installation atomically, then prints the installed version
-and the next setup commands.
-
-Pin a version or choose an installation directory:
+Pin a release or choose a directory:
 
 ```sh
 curl -fsSL https://github.com/PlotAI/plot-launcher/releases/latest/download/install.sh \
   | sh -s -- --version v0.2.0 --dir "$HOME/bin"
 ```
 
-`install.sh` accepts `--version <tag>`, `--dir <path>`, and `--help`. It also
-honors `PLOT_LAUNCHER_VERSION`, `PLOT_LAUNCHER_INSTALL_DIR`,
-`PLOT_LAUNCHER_REPOSITORY`, `PLOT_LAUNCHER_RELEASE_BASE_URL` (internal mirror
-serving the assets of one tag), `GITHUB_TOKEN`/`GH_TOKEN` (private repository),
-and `NO_COLOR`.
+`install.sh` also accepts `--help` and honors `PLOT_LAUNCHER_VERSION`, `PLOT_LAUNCHER_INSTALL_DIR`, `PLOT_LAUNCHER_REPOSITORY`, `PLOT_LAUNCHER_RELEASE_BASE_URL`, `GITHUB_TOKEN`/`GH_TOKEN`, and `NO_COLOR`. For a private repository, fetch the installer with `gh release download v0.2.0 --repo PlotAI/plot-launcher --pattern install.sh` and run it with a token.
 
-When the release repository is private, download the installer with the GitHub
-CLI and give it a token so it can read the release assets:
+## Settings
+
+Settings live in `~/.config/plot-launcher/settings.json` on Linux, `~/Library/Application Support/plot-launcher/settings.json` on macOS, and `%AppData%\plot-launcher\settings.json` on Windows. Set `PLOT_LAUNCHER_CONFIG_DIR` to store them elsewhere.
 
 ```sh
-gh release download v0.2.0 --repo PlotAI/plot-launcher --pattern install.sh
-GITHUB_TOKEN=$(gh auth token) sh install.sh
+plot-launcher settings set-base-directory ~/plot-workspaces
+plot-launcher settings set-editor "code --reuse-window"
+plot-launcher settings show
 ```
 
-Verifying by hand works too:
-
-```sh
-curl -fsSLO https://github.com/PlotAI/plot-launcher/releases/download/v0.2.0/plot-launcher_0.2.0_darwin_arm64.tar.gz
-curl -fsSLO https://github.com/PlotAI/plot-launcher/releases/download/v0.2.0/checksums.txt
-grep plot-launcher_0.2.0_darwin_arm64.tar.gz checksums.txt
-shasum -a 256 plot-launcher_0.2.0_darwin_arm64.tar.gz
-```
-
-Upgrade by running the installer again. Uninstall by deleting the binary, for
-example `rm ~/.local/bin/plot-launcher`.
-
-Check what is installed:
-
-```sh
-plot-launcher version
-```
-
-## Components
-
-- **Plot Launcher** (`internal/launcher`) orchestrates the open flow.
-- **Protocol Handler** (`internal/protocol`) receives browser requests over
-  HTTP on `127.0.0.1:8765` and triggers the open flow.
-- **Repository Controller** (`internal/repository`) checks out a pull request and
-  prepares its working directory. The **GitHub Controller** is its GitHub
-  specialization and uses `git` to fetch `refs/pull/<number>/head`.
-- **Editor Launcher** (`internal/editor`) starts the configured editor with the
-  prepared working directory as its argument.
-- **Settings Manager** (`internal/settings`) implements *Set editor* and *Set base
-  directory* and persists the **Launcher Settings** data object as JSON.
+Each repository keeps one directory below the base directory, with one branch per pull request, so git switches between pull requests for you. Git authentication comes from your git credential configuration.
 
 ## Build and test
 
@@ -90,107 +49,3 @@ go test ./...
 ```
 
 Go 1.27.3 and `git` are required.
-
-## Settings
-
-Launcher Settings live in the user configuration directory: for example
-`~/.config/plot-launcher/settings.json` on Linux,
-`~/Library/Application Support/plot-launcher/settings.json` on macOS, and
-`%AppData%\plot-launcher\settings.json` on Windows. Set
-`PLOT_LAUNCHER_CONFIG_DIR` to keep them somewhere else, for example in portable
-or test installations:
-
-```sh
-plot-launcher settings set-base-directory ~/plot-workspaces
-plot-launcher settings set-editor "code --reuse-window"
-plot-launcher settings show
-```
-
-```json
-{
-  "base_directory": "/home/you/plot-workspaces",
-  "editor": "code --reuse-window"
-}
-```
-
-A pull request is prepared under `<base_directory>/<name>`, for example
-`/home/you/plot-workspaces/graph-canvas`, on branch `plot/pr-<number>`. Each
-repository keeps one directory, and git keeps its pull requests apart by branch:
-requesting another pull request of the same repository switches that directory
-to the pull request's branch, and repeating a request refreshes the branch from
-the pull request head. Git authentication is provided by the environment's git
-credential configuration.
-
-## Open In Editor
-
-Plot Launcher is the headless companion to Plot. Run it with no command and it
-serves browser requests on `http://127.0.0.1:8765` until it is stopped:
-
-```sh
-plot-launcher
-```
-
-It always uses that loopback address and port, so there is nothing to configure
-and no way to expose it to another host. Stop it with `Ctrl-C` or `SIGTERM`;
-starting a second instance reports that one is already listening.
-
-Then request a pull request by URL:
-
-```text
-GET http://127.0.0.1:8765/open?url=<https://github.com/owner/name/pull/number>
-```
-
-or by repository and number:
-
-```text
-GET http://127.0.0.1:8765/open?repository=<owner/name>&pull_request=<number>
-```
-
-A `url` request must name a `github.com` pull request; trailing path segments
-and query values, such as the links to a pull request's files or commits, are
-accepted. Supplying both forms in one request is rejected.
-
-Successful requests return the prepared working directory as JSON.
-
-## Releases
-
-Releases are cut from a tag, and CI publishes them:
-
-1. Merge the change to `main`.
-2. Tag and push:
-
-   ```sh
-   git tag -a v0.3.0 -m "v0.3.0"
-   git push origin v0.3.0
-   ```
-
-3. `.github/workflows/release.yml` runs the tests and then
-   [GoReleaser](https://goreleaser.com) publishes a release containing
-   `plot-launcher_<version>_{darwin,linux,windows}_{amd64,arm64}` archives,
-   `checksums.txt`, the `install.sh` and `install.ps1` belonging to that tag, and
-   a changelog built from conventional commits. The workflow fails if the tests
-   fail, so a broken tag never produces a downloadable release.
-4. Confirm the workflow is green and that the install commands in this README
-   work against the published tag.
-
-Release builds inject the tag, commit, and commit date with `-ldflags`, which is
-what `plot-launcher version` reports. Reproduce the artifacts locally with:
-
-```sh
-goreleaser release --snapshot --clean --skip=publish
-```
-
-Hardening to apply before distributing to external customers:
-
-- Sign the macOS binaries with a Developer ID certificate and notarize them
-  (GoReleaser `notarize`), then ship a `.pkg` or `.dmg` so Gatekeeper accepts the
-  download even when a browser adds the quarantine attribute.
-- Set the repository variable `ENABLE_ARTIFACT_ATTESTATIONS` to `true` to have
-  the release workflow attest `checksums.txt` with
-  `actions/attest-build-provenance`; customers can then run
-  `gh attestation verify`.
-- Serve the installers from a stable download domain instead of
-  `raw.githubusercontent.com`, and keep the published URL stable across
-  releases.
-- Keep the release repository public, or require `GITHUB_TOKEN` for downloads as
-  the installer already does for private repositories.
