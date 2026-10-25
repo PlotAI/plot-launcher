@@ -1,9 +1,9 @@
 # Plot Launcher
 
 Plot Launcher is the Go/CLI application that opens a pull request in your editor.
-A browser sends an **Open In Editor Requested** request to the Protocol Handler,
-the GitHub Controller checks out the pull request and prepares its working
-directory, and the Editor Launcher starts the configured editor there.
+A browser sends a request to the Protocol Handler, the GitHub Controller checks
+out the pull request and prepares its working directory, and the Editor Launcher
+starts the configured editor there.
 
 ## Install
 
@@ -72,7 +72,7 @@ plot-launcher version
 
 - **Plot Launcher** (`internal/launcher`) orchestrates the open flow.
 - **Protocol Handler** (`internal/protocol`) receives browser requests over
-  HTTP on `127.0.0.1:8765`. `Open In Editor Requested` triggers the flow.
+  HTTP on `127.0.0.1:8765` and triggers the open flow.
 - **Repository Controller** (`internal/repository`) checks out a pull request and
   prepares its working directory. The **GitHub Controller** is its GitHub
   specialization and uses `git` to fetch `refs/pull/<number>/head`.
@@ -117,7 +117,7 @@ A pull request is prepared under
 Git authentication is provided by the environment's git credential
 configuration.
 
-## Open In Editor Requested
+## Open In Editor
 
 Plot Launcher is the headless companion to Plot. Run it with no command and it
 serves browser requests on `http://127.0.0.1:8765` until it is stopped:

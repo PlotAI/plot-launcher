@@ -1,6 +1,5 @@
 // Package protocol implements the Protocol Handler application interface. It
-// receives "Open In Editor Requested" browser requests over HTTP and hands them
-// to the Plot Launcher.
+// receives browser requests over HTTP and hands them to the Plot Launcher.
 package protocol
 
 import (
@@ -13,11 +12,7 @@ import (
 	"github.com/PlotAI/plot-launcher/internal/repository"
 )
 
-// EventOpenInEditorRequested is the application event that triggers the
-// Protocol Handler to receive a browser request.
-const EventOpenInEditorRequested = "Open In Editor Requested"
-
-// OpenRequest is the payload of an Open In Editor Requested event.
+// OpenRequest is a request to open a pull request in the editor.
 type OpenRequest struct {
 	Repository        string
 	PullRequestNumber int
@@ -35,9 +30,8 @@ func (r OpenRequest) Validate() error {
 	return err
 }
 
-// ParseQuery parses an Open In Editor Requested request from query values. A
-// request carries either repository and pull_request, or a single url naming a
-// GitHub pull request.
+// ParseQuery parses a request from query values. A request carries either
+// repository and pull_request, or a single url naming a GitHub pull request.
 func ParseQuery(values url.Values) (OpenRequest, error) {
 	if _, ok := values["url"]; ok {
 		return parsePullRequestURLQuery(values)

@@ -11,15 +11,13 @@ import (
 	"github.com/PlotAI/plot-launcher/internal/repository"
 )
 
-// Opener receives Open In Editor Requested events and returns the prepared
-// working directory.
+// Opener receives open requests and returns the prepared working directory.
 type Opener interface {
 	OpenInEditor(ctx context.Context, pullRequest repository.PullRequest) (string, error)
 }
 
-// OpenResult is the response to an Open In Editor Requested event.
+// OpenResult is the response to a completed open request.
 type OpenResult struct {
-	Event            string `json:"event"`
 	Repository       string `json:"repository"`
 	PullRequest      int    `json:"pull_request"`
 	WorkingDirectory string `json:"working_directory"`
@@ -28,7 +26,6 @@ type OpenResult struct {
 // NewOpenResult returns the response for a completed open request.
 func NewOpenResult(pullRequest repository.PullRequest, workingDirectory string) OpenResult {
 	return OpenResult{
-		Event:            EventOpenInEditorRequested,
 		Repository:       pullRequest.Repository(),
 		PullRequest:      pullRequest.Number,
 		WorkingDirectory: workingDirectory,
@@ -72,7 +69,7 @@ func (h *Handler) receiveBrowserRequest(writer http.ResponseWriter, request *htt
 		return
 	}
 	writer.Write([]byte("Plot Launcher protocol handler\n" +
-		"Send an \"" + EventOpenInEditorRequested + "\" request to /open?url=<pull request URL>\n" +
+		"Send a request to /open?url=<pull request URL>\n" +
 		"or to /open?repository=<owner/name>&pull_request=<number>.\n"))
 }
 
@@ -93,8 +90,7 @@ func (h *Handler) openInEditor(writer http.ResponseWriter, request *http.Request
 		return
 	}
 
-	h.logger.Info("open in editor requested",
-		"event", EventOpenInEditorRequested,
+	h.logger.Info("opening pull request in editor",
 		"repository", pullRequest.Repository(),
 		"pull_request", pullRequest.Number,
 		"remote_address", request.RemoteAddr,
@@ -102,8 +98,7 @@ func (h *Handler) openInEditor(writer http.ResponseWriter, request *http.Request
 
 	workingDirectory, err := h.opener.OpenInEditor(request.Context(), pullRequest)
 	if err != nil {
-		h.logger.Error("open in editor failed",
-			"event", EventOpenInEditorRequested,
+		h.logger.Error("opening pull request in editor failed",
 			"repository", pullRequest.Repository(),
 			"pull_request", pullRequest.Number,
 			"error", err,

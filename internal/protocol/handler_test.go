@@ -120,8 +120,8 @@ func TestHandlerRootDescribesInterface(t *testing.T) {
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
 	}
-	if !strings.Contains(recorder.Body.String(), EventOpenInEditorRequested) {
-		t.Fatalf("root response = %q, want the event name", recorder.Body.String())
+	if !strings.Contains(recorder.Body.String(), "/open?url=") {
+		t.Fatalf("root response = %q, want the /open route", recorder.Body.String())
 	}
 }
 

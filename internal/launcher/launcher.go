@@ -1,6 +1,6 @@
 // Package launcher implements the Plot Launcher application component: it
-// receives an Open In Editor Requested event, checks out the pull request, and
-// launches the editor.
+// receives an open request, checks out the pull request, and launches the
+// editor.
 package launcher
 
 import (

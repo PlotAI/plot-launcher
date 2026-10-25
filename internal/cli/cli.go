@@ -119,7 +119,6 @@ func (r *Runner) runServe(ctx context.Context) int {
 	r.logger.Info("plot launcher listening",
 		"address", listener.Addr().String(),
 		"version", version.Version,
-		"event", protocol.EventOpenInEditorRequested,
 	)
 
 	server := protocol.NewServer(protocol.NewHandler(r.launcher, r.logger))
