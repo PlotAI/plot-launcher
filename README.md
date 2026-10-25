@@ -1,7 +1,7 @@
 # Plot Launcher
 
 Plot Launcher is the Go/CLI application that opens a pull request in your editor.
-A browser sends a request to the Protocol Handler, the GitHub Controller checks
+A browser sends a request to the Protocol Handler, the Repository Controller checks
 out the pull request and prepares its working directory, and the Editor Launcher
 starts the configured editor there.
 
@@ -33,7 +33,7 @@ Pin a version or choose an installation directory:
 
 ```sh
 curl -fsSL https://github.com/PlotAI/plot-launcher/releases/latest/download/install.sh \
-  | sh -s -- --version v0.1.3 --dir "$HOME/bin"
+  | sh -s -- --version v0.2.0 --dir "$HOME/bin"
 ```
 
 `install.sh` accepts `--version <tag>`, `--dir <path>`, and `--help`. It also
@@ -46,17 +46,17 @@ When the release repository is private, download the installer with the GitHub
 CLI and give it a token so it can read the release assets:
 
 ```sh
-gh release download v0.1.3 --repo PlotAI/plot-launcher --pattern install.sh
+gh release download v0.2.0 --repo PlotAI/plot-launcher --pattern install.sh
 GITHUB_TOKEN=$(gh auth token) sh install.sh
 ```
 
 Verifying by hand works too:
 
 ```sh
-curl -fsSLO https://github.com/PlotAI/plot-launcher/releases/download/v0.1.3/plot-launcher_0.1.3_darwin_arm64.tar.gz
-curl -fsSLO https://github.com/PlotAI/plot-launcher/releases/download/v0.1.3/checksums.txt
-grep plot-launcher_0.1.3_darwin_arm64.tar.gz checksums.txt
-shasum -a 256 plot-launcher_0.1.3_darwin_arm64.tar.gz
+curl -fsSLO https://github.com/PlotAI/plot-launcher/releases/download/v0.2.0/plot-launcher_0.2.0_darwin_arm64.tar.gz
+curl -fsSLO https://github.com/PlotAI/plot-launcher/releases/download/v0.2.0/checksums.txt
+grep plot-launcher_0.2.0_darwin_arm64.tar.gz checksums.txt
+shasum -a 256 plot-launcher_0.2.0_darwin_arm64.tar.gz
 ```
 
 Upgrade by running the installer again. Uninstall by deleting the binary, for
@@ -156,8 +156,8 @@ Releases are cut from a tag, and CI publishes them:
 2. Tag and push:
 
    ```sh
-   git tag -a v0.2.0 -m "v0.2.0"
-   git push origin v0.2.0
+   git tag -a v0.3.0 -m "v0.3.0"
+   git push origin v0.3.0
    ```
 
 3. `.github/workflows/release.yml` runs the tests and then
