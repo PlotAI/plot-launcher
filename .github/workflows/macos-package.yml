@@ -12,15 +12,6 @@ on:
         required: false
         type: boolean
         default: false
-    secrets:
-      - MACOS_CERTIFICATE
-      - MACOS_CERTIFICATE_PASSWORD
-      - APPLE_TEAM_ID
-      - APPLE_API_KEY
-      - APPLE_API_KEY_ID
-      - APPLE_API_ISSUER
-      - APPLE_ID
-      - APPLE_APP_PASSWORD
   workflow_dispatch:
     inputs:
       tag:
