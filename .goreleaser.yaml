@@ -90,7 +90,7 @@ release:
     Windows (PowerShell):
 
     ```powershell
-    irm https://github.com/PlotAI/plot-launcher/releases/download/{{ .Tag }}/install.ps1 | iex
+    Invoke-RestMethod https://github.com/PlotAI/plot-launcher/releases/download/{{ .Tag }}/install.ps1 | Invoke-Expression
     ```
 
     Every archive is listed in `checksums.txt`; the installer verifies it before

@@ -1,9 +1,7 @@
 # Plot Launcher
 
 Plot Launcher is the Go/CLI application that opens a pull request in your editor.
-A browser sends a request to the Protocol Handler, the Repository Controller checks
-out the pull request and prepares its working directory, and the Editor Launcher
-starts the configured editor there.
+A browser sends a request to the Protocol Handler, the Repository Controller checks out the pull request and prepares its working directory, and the Editor Launcher starts the configured editor there.
 
 ## Install
 
@@ -19,8 +17,11 @@ curl -fsSL https://github.com/PlotAI/plot-launcher/releases/latest/download/inst
 Windows (PowerShell):
 
 ```powershell
-irm https://github.com/PlotAI/plot-launcher/releases/latest/download/install.ps1 | iex
+Invoke-RestMethod https://github.com/PlotAI/plot-launcher/releases/latest/download/install.ps1 | Invoke-Expression
 ```
+
+`Invoke-RestMethod` fetches the installer and `Invoke-Expression` runs it, the
+PowerShell equivalent of piping `install.sh` into `sh`.
 
 The installer resolves the latest release (or a pinned `--version`), downloads
 the archive for your operating system and architecture, verifies it against the

@@ -18,7 +18,7 @@
     Release repository in owner/name form. Defaults to PlotAI/plot-launcher.
 
 .EXAMPLE
-    irm https://github.com/PlotAI/plot-launcher/releases/latest/download/install.ps1 | iex
+    Invoke-RestMethod https://github.com/PlotAI/plot-launcher/releases/latest/download/install.ps1 | Invoke-Expression
 
 .EXAMPLE
     .\install.ps1 -Version v0.1.0 -InstallDir C:\tools\plot
