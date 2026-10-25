@@ -173,6 +173,20 @@ Write-Ok "Plot Launcher $tag installed"
 Write-Host "  binary    $target"
 Write-Host "  version   $installedVersion"
 Write-Host "  platform  windows/$arch"
+
+# A browser link reaches the launcher through the operating system, so the web
+# page needs no knowledge of the loopback address or port.
+Write-Step 'Registering the plot-launcher:// scheme'
+try {
+    $schemeKey = 'HKCU:\Software\Classes\plot-launcher'
+    New-Item -Path $schemeKey -Force | Out-Null
+    Set-ItemProperty -Path $schemeKey -Name 'URL Protocol' -Value ''
+    New-Item -Path "$schemeKey\shell\open\command" -Force | Out-Null
+    Set-Item -Path "$schemeKey\shell\open\command" -Value ('"' + $target + '" "%1"')
+}
+catch {
+    Write-Host "! Could not register plot-launcher:// links. $($_.Exception.Message)" -ForegroundColor Yellow
+}
 if ($pathAdded) {
     Write-Host ''
     Write-Host "! Added $InstallDir to your user PATH. Restart your terminal to pick it up." -ForegroundColor Yellow
@@ -184,4 +198,4 @@ Write-Host '  plot-launcher settings set-base-directory "$HOME\plot-workspaces"'
 Write-Host '  plot-launcher settings set-editor "code --reuse-window"'
 Write-Host '  plot-launcher'
 Write-Host ''
-Write-Host "Upgrade later by running this installer again; uninstall by deleting $target."
+Write-Host "Upgrade later by running this installer again; uninstall by deleting $target and the HKCU:\Software\Classes\plot-launcher key."

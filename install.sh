@@ -300,6 +300,32 @@ if [ "$os" = darwin ] && command -v xattr >/dev/null 2>&1; then
 	xattr -d com.apple.quarantine "$TARGET" 2>/dev/null || true
 fi
 
+# A browser link reaches the launcher through the operating system, so the web
+# page needs no knowledge of the loopback address or port.
+register_scheme() {
+	applications="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
+	desktop="$applications/plot-launcher.desktop"
+	if ! mkdir -p "$applications" 2>/dev/null || ! cat >"$desktop" 2>/dev/null <<EOF
+[Desktop Entry]
+Type=Application
+Name=Plot Launcher
+Exec="$TARGET" %u
+Terminal=false
+MimeType=x-scheme-handler/plot-launcher
+EOF
+	then
+		warn "could not write $desktop, so plot-launcher:// links stay unregistered"
+		return
+	fi
+	if command -v xdg-mime >/dev/null 2>&1; then
+		xdg-mime default plot-launcher.desktop x-scheme-handler/plot-launcher 2>/dev/null ||
+			warn "could not make Plot Launcher the plot-launcher:// handler"
+	fi
+	if command -v update-desktop-database >/dev/null 2>&1; then
+		update-desktop-database "$applications" >/dev/null 2>&1 || true
+	fi
+}
+
 installed=$("$TARGET" version 2>/dev/null) || fail "the installed binary at $TARGET could not run"
 
 printf '\n'
@@ -327,4 +353,8 @@ printf '\n%sNext steps%s\n' "$bold" "$reset"
 printf '  plot-launcher settings set-base-directory ~/plot-workspaces\n'
 printf '  plot-launcher settings set-editor "code --reuse-window"\n'
 printf '  plot-launcher\n'
+
+if [ "$os" = linux ]; then
+	register_scheme
+fi
 printf '\nUpgrade later by running this installer again; uninstall with\n  rm %s\n' "$TARGET"

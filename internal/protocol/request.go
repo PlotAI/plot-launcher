@@ -12,6 +12,35 @@ import (
 	"github.com/PlotAI/plot-launcher/internal/repository"
 )
 
+// Scheme is the URL scheme that hands a browser request to the Plot Launcher,
+// so a web page needs no knowledge of the loopback address or port.
+const Scheme = "plot-launcher"
+
+// openHost is the host of a scheme URL that requests an open.
+const openHost = "open"
+
+// IsSchemeURL reports whether rawURL is a Plot Launcher scheme URL.
+func IsSchemeURL(rawURL string) bool {
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(rawURL)), Scheme+"://")
+}
+
+// ParseSchemeURL parses a plot-launcher://open request. A request carries
+// either repository and pull_request, or a single url naming a GitHub pull
+// request.
+func ParseSchemeURL(rawURL string) (OpenRequest, error) {
+	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil {
+		return OpenRequest{}, fmt.Errorf("parse %s URL: %w", Scheme, err)
+	}
+	if !strings.EqualFold(parsed.Scheme, Scheme) {
+		return OpenRequest{}, fmt.Errorf("URL %q must use the %s:// scheme", rawURL, Scheme)
+	}
+	if !strings.EqualFold(parsed.Host, openHost) || (parsed.Path != "" && parsed.Path != "/") {
+		return OpenRequest{}, fmt.Errorf("URL %q must use the %s://%s form", rawURL, Scheme, openHost)
+	}
+	return ParseQuery(parsed.Query())
+}
+
 // OpenRequest is a request to open a pull request in the editor.
 type OpenRequest struct {
 	Repository        string

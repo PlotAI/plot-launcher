@@ -12,6 +12,10 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/PlotAI/plot-launcher/internal/launcher"
+	"github.com/PlotAI/plot-launcher/internal/repository"
+	"github.com/PlotAI/plot-launcher/internal/settings"
 )
 
 func newTestRunner(t *testing.T) (*Runner, *bytes.Buffer, *bytes.Buffer) {
@@ -212,13 +216,67 @@ func TestServeRejectsArguments(t *testing.T) {
 func TestOpenCommandIsRemoved(t *testing.T) {
 	runner, _, _ := newTestRunner(t)
 
+	// A browser link is handled as a bare argument; there is no open command.
 	for _, args := range [][]string{
 		{"open", "plot-launcher://open?repository=owner/name&pull_request=1"},
 		{"open", "--repository", "owner/name", "--pull-request", "1"},
-		{"plot-launcher://open?repository=owner/name&pull_request=1"},
 	} {
 		if code := runner.Run(context.Background(), args); code != 2 {
 			t.Fatalf("%v exit code = %d, want 2", args, code)
 		}
+	}
+}
+
+type stubSettings struct{ value settings.LauncherSettings }
+
+func (s stubSettings) Load() (settings.LauncherSettings, error) { return s.value, nil }
+
+type stubRepositories struct{ workingDirectory string }
+
+func (s stubRepositories) CheckoutPRAndPrepareWorkingDirectory(context.Context, repository.PullRequest, string) (string, error) {
+	return s.workingDirectory, nil
+}
+
+type stubEditors struct{ directory string }
+
+func (s *stubEditors) Launch(_ context.Context, _, directory string) error {
+	s.directory = directory
+	return nil
+}
+
+func TestSchemeURLOpensPullRequest(t *testing.T) {
+	runner, stdout, stderr := newTestRunner(t)
+	base := t.TempDir()
+	workingDirectory := filepath.Join(base, "graph-canvas")
+	editors := &stubEditors{}
+	runner.launcher = launcher.New(
+		stubSettings{value: settings.LauncherSettings{BaseDirectory: base, Editor: "code"}},
+		stubRepositories{workingDirectory: workingDirectory},
+		editors,
+	)
+
+	code := runner.Run(context.Background(), []string{"plot-launcher://open?url=https://github.com/PlotAI/graph-canvas/pull/7"})
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0: %s", code, stderr)
+	}
+	if editors.directory != workingDirectory {
+		t.Fatalf("editor directory = %q, want %q", editors.directory, workingDirectory)
+	}
+	if strings.TrimSpace(stdout.String()) != workingDirectory {
+		t.Fatalf("stdout = %q, want %q", stdout.String(), workingDirectory)
+	}
+}
+
+func TestSchemeURLRejectsInvalidRequests(t *testing.T) {
+	runner, _, _ := newTestRunner(t)
+
+	if code := runner.Run(context.Background(), []string{"plot-launcher://open?repository=owner/name"}); code != 2 {
+		t.Fatalf("exit code = %d, want 2", code)
+	}
+	if code := runner.Run(context.Background(), []string{"plot-launcher://settings?repository=owner/name&pull_request=1"}); code != 2 {
+		t.Fatalf("exit code = %d, want 2", code)
+	}
+	if code := runner.Run(context.Background(), []string{"plot-launcher://open?repository=owner/name&pull_request=1", "extra"}); code != 2 {
+		t.Fatalf("exit code with extra arguments = %d, want 2", code)
 	}
 }

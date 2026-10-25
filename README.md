@@ -1,6 +1,6 @@
 # Plot Launcher
 
-Plot Launcher is the Go/CLI companion to Plot. Run `plot-launcher` and it listens on `http://127.0.0.1:8765`, opening a pull request in your editor when Plot asks it to.
+Plot Launcher is the Go/CLI companion to Plot: it opens a pull request in your editor from a `plot-launcher://` browser link or from the loopback Protocol Handler on `http://127.0.0.1:8765`.
 
 ## Install
 
@@ -40,6 +40,14 @@ plot-launcher settings show
 ```
 
 Each repository keeps one directory below the base directory, with one branch per pull request, so git switches between pull requests for you. Git authentication comes from your git credential configuration.
+
+## Browser links
+
+```text
+plot-launcher://open?url=<pull request URL>
+```
+
+The installers register that scheme, so a link opens a pull request without the page knowing the loopback address or port. macOS cannot register a scheme for a bare binary, so call `plot-launcher "plot-launcher://open?url=<pull request URL>"` there.
 
 ## Build and test
 

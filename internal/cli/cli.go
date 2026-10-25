@@ -43,6 +43,10 @@ Commands:
   settings set-editor <command>              Set editor
   settings set-base-directory <path>         Set base directory
   version                                    Print the Plot Launcher version
+
+A registered browser link opens a pull request directly:
+
+  plot-launcher "plot-launcher://open?url=<pull request URL>"
 `
 
 // Runner executes Plot Launcher commands.
@@ -80,6 +84,14 @@ func NewRunner(stdout, stderr io.Writer) (*Runner, error) {
 func (r *Runner) Run(ctx context.Context, args []string) int {
 	if len(args) == 0 {
 		return r.runServe(ctx)
+	}
+
+	if protocol.IsSchemeURL(args[0]) {
+		if len(args) != 1 {
+			fmt.Fprintln(r.stderr, "a browser link accepts no other arguments")
+			return 2
+		}
+		return r.runSchemeURL(ctx, args[0])
 	}
 
 	switch args[0] {
@@ -126,6 +138,29 @@ func (r *Runner) runServe(ctx context.Context) int {
 		fmt.Fprintf(r.stderr, "plot-launcher: %v\n", err)
 		return 1
 	}
+	return 0
+}
+
+// runSchemeURL handles a browser link, which arrives as a command-line
+// argument when the operating system hands the registered scheme to the Plot
+// Launcher.
+func (r *Runner) runSchemeURL(ctx context.Context, rawURL string) int {
+	openRequest, err := protocol.ParseSchemeURL(rawURL)
+	if err != nil {
+		fmt.Fprintf(r.stderr, "plot-launcher: %v\n", err)
+		return 2
+	}
+	pullRequest, err := openRequest.PullRequest()
+	if err != nil {
+		fmt.Fprintf(r.stderr, "plot-launcher: %v\n", err)
+		return 2
+	}
+	workingDirectory, err := r.launcher.OpenInEditor(ctx, pullRequest)
+	if err != nil {
+		fmt.Fprintf(r.stderr, "plot-launcher: %v\n", err)
+		return 1
+	}
+	fmt.Fprintln(r.stdout, workingDirectory)
 	return 0
 }
 

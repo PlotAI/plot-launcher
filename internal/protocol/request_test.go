@@ -92,3 +92,63 @@ func TestParseQueryRejectsInvalidPullRequestURLs(t *testing.T) {
 		})
 	}
 }
+
+func TestParseSchemeURL(t *testing.T) {
+	tests := []struct {
+		name       string
+		rawURL     string
+		repository string
+		number     int
+	}{
+		{"pull request url", "plot-launcher://open?url=https://github.com/owner/name/pull/7", "owner/name", 7},
+		{"encoded pull request url", "plot-launcher://open?url=https%3A%2F%2Fgithub.com%2Fowner%2Fname%2Fpull%2F7", "owner/name", 7},
+		{"repository and number", "plot-launcher://open?repository=owner/name&pull_request=7", "owner/name", 7},
+		{"trailing slash", "plot-launcher://open/?repository=owner/name&pull_request=7", "owner/name", 7},
+		{"uppercase scheme", "PLOT-LAUNCHER://open?repository=owner/name&pull_request=7", "owner/name", 7},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			parsed, err := ParseSchemeURL(test.rawURL)
+			if err != nil {
+				t.Fatalf("ParseSchemeURL(%q): %v", test.rawURL, err)
+			}
+			if parsed.Repository != test.repository || parsed.PullRequestNumber != test.number {
+				t.Fatalf("ParseSchemeURL(%q) = %+v, want %s#%d", test.rawURL, parsed, test.repository, test.number)
+			}
+		})
+	}
+}
+
+func TestParseSchemeURLRejectsInvalidURLs(t *testing.T) {
+	tests := map[string]string{
+		"wrong scheme":          "https://github.com/owner/name/pull/7",
+		"wrong host":            "plot-launcher://settings?repository=owner/name&pull_request=7",
+		"unexpected path":       "plot-launcher://open/settings?repository=owner/name&pull_request=7",
+		"missing parameters":    "plot-launcher://open",
+		"missing number":        "plot-launcher://open?repository=owner/name",
+		"non-numeric number":    "plot-launcher://open?repository=owner/name&pull_request=zero",
+		"unsupported pull host": "plot-launcher://open?url=https://example.com/owner/name/pull/7",
+	}
+	for name, rawURL := range tests {
+		t.Run(name, func(t *testing.T) {
+			if _, err := ParseSchemeURL(rawURL); err == nil {
+				t.Fatalf("ParseSchemeURL(%q) returned no error", rawURL)
+			}
+		})
+	}
+}
+
+func TestIsSchemeURL(t *testing.T) {
+	tests := map[string]bool{
+		"plot-launcher://open?repository=owner/name&pull_request=7": true,
+		"  plot-launcher://open":                                    true,
+		"https://github.com/owner/name/pull/7":                      false,
+		"plot-launcher":                                             false,
+		"serve":                                                     false,
+	}
+	for rawURL, want := range tests {
+		if got := IsSchemeURL(rawURL); got != want {
+			t.Fatalf("IsSchemeURL(%q) = %t, want %t", rawURL, got, want)
+		}
+	}
+}
