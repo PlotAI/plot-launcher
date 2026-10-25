@@ -52,7 +52,7 @@ func (f *fakeEditor) Launch(_ context.Context, command, directory string) error 
 
 func TestOpenInEditor(t *testing.T) {
 	settingsReader := &fakeSettings{loaded: settings.LauncherSettings{BaseDirectory: "/base", Editor: "code --wait"}}
-	repositories := &fakeRepositories{workingDirectory: "/base/name#pr7"}
+	repositories := &fakeRepositories{workingDirectory: "/base/name"}
 	editor := &fakeEditor{}
 	plotLauncher := New(settingsReader, repositories, editor)
 
@@ -144,7 +144,7 @@ func TestOpenInEditorPropagatesErrors(t *testing.T) {
 		editorError := errors.New("editor failed")
 		plotLauncher := New(
 			&fakeSettings{loaded: settings.LauncherSettings{BaseDirectory: "/base", Editor: "code"}},
-			&fakeRepositories{workingDirectory: "/base/name#pr7"},
+			&fakeRepositories{workingDirectory: "/base/name"},
 			&fakeEditor{err: editorError},
 		)
 		_, err := plotLauncher.OpenInEditor(context.Background(), repository.PullRequest{Owner: "owner", Name: "name", Number: 7})

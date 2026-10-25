@@ -16,8 +16,8 @@ import (
 const gitHubURL = "https://github.com/%s/%s.git"
 
 // GitHubController implements the Repository Controller for GitHub. It checks
-// out the pull request head ref into a working directory below the base
-// directory and prepares it for the Editor Launcher.
+// out the pull request head ref into the repository's working directory and
+// prepares it for the Editor Launcher.
 type GitHubController struct {
 	git       string
 	remoteURL func(PullRequest) string
@@ -38,7 +38,9 @@ func NewGitHubController() *GitHubController {
 }
 
 // CheckoutPRAndPrepareWorkingDirectory fetches the pull request head, checks
-// it out on a local branch, and returns the prepared working directory.
+// it out on the pull request's local branch, and returns the prepared working
+// directory. A repository keeps one working directory, so requesting another
+// pull request of the same repository switches that directory's branch.
 func (c *GitHubController) CheckoutPRAndPrepareWorkingDirectory(ctx context.Context, pullRequest PullRequest, baseDirectory string) (string, error) {
 	if err := pullRequest.Validate(); err != nil {
 		return "", err

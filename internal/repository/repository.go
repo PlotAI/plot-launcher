@@ -54,10 +54,10 @@ func (p PullRequest) Validate() error {
 
 // WorkingDirectory returns the prepared working directory for the pull
 // request below the configured base directory. It is named after the
-// repository with the pull request number appended, for example
-// <base>/graph-canvas#pr23.
+// repository, so every pull request of a repository shares one directory and
+// git switches the branch for the requested pull request.
 func (p PullRequest) WorkingDirectory(baseDirectory string) string {
-	return filepath.Join(baseDirectory, fmt.Sprintf("%s#pr%d", p.Name, p.Number))
+	return filepath.Join(baseDirectory, p.Name)
 }
 
 func splitRepository(repositoryName string) (string, string, error) {

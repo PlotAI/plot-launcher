@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -46,9 +47,14 @@ func (r *testRepository) remoteURL() string {
 
 func (r *testRepository) update(t *testing.T, content string) {
 	t.Helper()
+	r.pushPullRequest(t, 7, content)
+}
+
+func (r *testRepository) pushPullRequest(t *testing.T, number int, content string) {
+	t.Helper()
 	writeFile(t, filepath.Join(r.source, "README.md"), content)
 	runGit(t, r.source, "commit", "--quiet", "-am", content)
-	runGit(t, r.source, "push", "--quiet", r.bare, "HEAD:refs/pull/7/head")
+	runGit(t, r.source, "push", "--quiet", r.bare, fmt.Sprintf("HEAD:refs/pull/%d/head", number))
 }
 
 func TestGitHubControllerChecksOutPullRequest(t *testing.T) {
@@ -86,6 +92,49 @@ func TestGitHubControllerChecksOutPullRequest(t *testing.T) {
 	}
 	if content := readFile(t, filepath.Join(workingDirectory, "README.md")); content != "updated pull request content" {
 		t.Fatalf("README.md = %q, want %q", content, "updated pull request content")
+	}
+}
+
+func TestGitHubControllerSwitchesPullRequestsInOneDirectory(t *testing.T) {
+	testRepository := newTestRepository(t)
+	controller := NewGitHubController()
+	controller.remoteURL = func(PullRequest) string { return testRepository.remoteURL() }
+
+	base := t.TempDir()
+	first := PullRequest{Owner: "owner", Name: "name", Number: 7}
+	firstDirectory, err := controller.CheckoutPRAndPrepareWorkingDirectory(context.Background(), first, base)
+	if err != nil {
+		t.Fatalf("first checkout: %v", err)
+	}
+
+	testRepository.pushPullRequest(t, 8, "other pull request content")
+	second := PullRequest{Owner: "owner", Name: "name", Number: 8}
+	secondDirectory, err := controller.CheckoutPRAndPrepareWorkingDirectory(context.Background(), second, base)
+	if err != nil {
+		t.Fatalf("second checkout: %v", err)
+	}
+	if secondDirectory != firstDirectory {
+		t.Fatalf("working directory = %q, want the repository directory %q", secondDirectory, firstDirectory)
+	}
+	if branch := runGit(t, secondDirectory, "rev-parse", "--abbrev-ref", "HEAD"); branch != "plot/pr-8" {
+		t.Fatalf("branch = %q, want %q", branch, "plot/pr-8")
+	}
+	if content := readFile(t, filepath.Join(secondDirectory, "README.md")); content != "other pull request content" {
+		t.Fatalf("README.md = %q, want %q", content, "other pull request content")
+	}
+
+	backDirectory, err := controller.CheckoutPRAndPrepareWorkingDirectory(context.Background(), first, base)
+	if err != nil {
+		t.Fatalf("checkout of the first pull request again: %v", err)
+	}
+	if backDirectory != firstDirectory {
+		t.Fatalf("working directory = %q, want %q", backDirectory, firstDirectory)
+	}
+	if branch := runGit(t, backDirectory, "rev-parse", "--abbrev-ref", "HEAD"); branch != "plot/pr-7" {
+		t.Fatalf("branch = %q, want %q", branch, "plot/pr-7")
+	}
+	if content := readFile(t, filepath.Join(backDirectory, "README.md")); content != testRemoteContent {
+		t.Fatalf("README.md = %q, want %q", content, testRemoteContent)
 	}
 }
 

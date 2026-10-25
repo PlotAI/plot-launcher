@@ -112,10 +112,13 @@ plot-launcher settings show
 }
 ```
 
-A pull request is prepared under `<base_directory>/<name>#pr<number>`, for
-example `/home/you/plot-workspaces/graph-canvas#pr23`, on branch
-`plot/pr-<number>`. Running the same request again reuses that directory. Git
-authentication is provided by the environment's git credential configuration.
+A pull request is prepared under `<base_directory>/<name>`, for example
+`/home/you/plot-workspaces/graph-canvas`, on branch `plot/pr-<number>`. Each
+repository keeps one directory, and git keeps its pull requests apart by branch:
+requesting another pull request of the same repository switches that directory
+to the pull request's branch, and repeating a request refreshes the branch from
+the pull request head. Git authentication is provided by the environment's git
+credential configuration.
 
 ## Open In Editor
 

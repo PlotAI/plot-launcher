@@ -32,7 +32,7 @@ func newTestHandler(opener Opener) *Handler {
 }
 
 func TestHandlerOpenInEditor(t *testing.T) {
-	opener := &fakeOpener{workingDirectory: "/workspace/name#pr7"}
+	opener := &fakeOpener{workingDirectory: "/workspace/name"}
 	handler := newTestHandler(opener)
 
 	request := httptest.NewRequest(http.MethodGet, "/open?repository=owner/name&pull_request=7", nil)
@@ -137,7 +137,7 @@ func TestHandlerUnknownPath(t *testing.T) {
 }
 
 func TestHandlerOpenInEditorAcceptsPullRequestURL(t *testing.T) {
-	opener := &fakeOpener{workingDirectory: "/workspace/name#pr7"}
+	opener := &fakeOpener{workingDirectory: "/workspace/name"}
 	handler := newTestHandler(opener)
 
 	request := httptest.NewRequest(http.MethodGet, "/open?url=https%3A%2F%2Fgithub.com%2FPlotCustomer%2Fmenu%2Fpull%2F6", nil)
