@@ -1,0 +1,117 @@
+name: macOS package
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: Version to build, for example v0.3.0
+        required: true
+        type: string
+      upload:
+        description: Attach the package to the GitHub release for that tag
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      - MACOS_CERTIFICATE
+      - MACOS_CERTIFICATE_PASSWORD
+      - APPLE_TEAM_ID
+      - APPLE_API_KEY
+      - APPLE_API_KEY_ID
+      - APPLE_API_ISSUER
+      - APPLE_ID
+      - APPLE_APP_PASSWORD
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Version to build, for example v0.3.0
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    name: Build, sign and notarize
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Import the Developer ID certificate
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          echo "$MACOS_CERTIFICATE" | openssl base64 -d -A -out "$RUNNER_TEMP/certificate.p12"
+          security create-keychain -p actions "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p actions "$keychain"
+          security import "$RUNNER_TEMP/certificate.p12" -P "$MACOS_CERTIFICATE_PASSWORD" \
+            -A -t cert -f pkcs12 -k "$keychain"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k actions "$keychain"
+          security list-keychain -d user -s "$keychain"
+          rm "$RUNNER_TEMP/certificate.p12"
+
+      - name: Build and sign the app
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          identity=$(security find-identity -v -p codesigning |
+            awk '/Developer ID Application/ { print $2; exit }')
+          if [ -z "$identity" ]; then
+            echo "no Developer ID Application identity in the imported certificate" >&2
+            security find-identity -v -p codesigning >&2
+            exit 1
+          fi
+          ./packaging/macos/build-app.sh --version "$TAG" --identity "$identity" --output build/macos
+
+      - name: Notarize and staple
+        env:
+          TAG: ${{ inputs.tag }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          zip="build/macos/plot-launcher_${TAG#v}_darwin_universal.zip"
+          if [ -n "$APPLE_API_KEY" ]; then
+            echo "$APPLE_API_KEY" | openssl base64 -d -A -out "$RUNNER_TEMP/AuthKey.p8"
+            credentials=(--key "$RUNNER_TEMP/AuthKey.p8" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER")
+          else
+            credentials=(--apple-id "$APPLE_ID" --password "$APPLE_APP_PASSWORD" --team-id "$APPLE_TEAM_ID")
+          fi
+          ./packaging/macos/notarize.sh --app "build/macos/Plot Launcher.app" --zip "$zip" "${credentials[@]}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: plot-launcher-macos
+          path: build/macos/plot-launcher_*_darwin_universal.zip
+          if-no-files-found: error
+
+      - name: Attach the package to the release
+        if: inputs.upload
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          zip="build/macos/plot-launcher_${TAG#v}_darwin_universal.zip"
+          name=$(basename "$zip")
+          gh release upload "$TAG" "$zip" --clobber
+          rm -rf build/checksums
+          mkdir -p build/checksums
+          gh release download "$TAG" --pattern checksums.txt --dir build/checksums --clobber
+          grep -v "  $name\$" build/checksums/checksums.txt >build/checksums/updated.txt || true
+          (cd "$(dirname "$zip")" && shasum -a 256 "$name") >>build/checksums/updated.txt
+          mv build/checksums/updated.txt build/checksums/checksums.txt
+          gh release upload "$TAG" build/checksums/checksums.txt --clobber

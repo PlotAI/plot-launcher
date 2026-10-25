@@ -4,7 +4,7 @@ Plot Launcher is the Go/CLI companion to Plot: it opens a pull request in your e
 
 ## Install
 
-Published for macOS, Linux, and Windows on `amd64` and `arm64`.
+macOS releases are universal; Linux and Windows releases are `amd64` and `arm64`. On macOS the installer puts `Plot Launcher.app` in `~/Applications` and links `plot-launcher` to it.
 
 macOS and Linux:
 
@@ -39,7 +39,7 @@ plot-launcher settings set-editor "code --reuse-window"
 plot-launcher settings show
 ```
 
-Each repository keeps one directory below the base directory, with one branch per pull request, so git switches between pull requests for you. Git authentication comes from your git credential configuration.
+Each repository keeps one directory below the base directory, with one branch per pull request, so git switches between pull requests for you. Git authentication comes from your git credential configuration. A link opened from a browser runs without your shell `PATH`, so point the editor at an absolute path such as `/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code`.
 
 ## Browser links
 
@@ -47,7 +47,7 @@ Each repository keeps one directory below the base directory, with one branch pe
 plot://open?url=<pull request URL>
 ```
 
-The installers register that scheme, so a link opens a pull request without the page knowing the loopback address or port. macOS cannot register a scheme for a bare binary, so call `plot-launcher "plot://open?url=<pull request URL>"` there.
+The installers register that scheme — a desktop entry on Linux, a registry key on Windows, an app bundle on macOS — so a link opens a pull request without the page knowing the loopback address or port.
 
 ## Build and test
 

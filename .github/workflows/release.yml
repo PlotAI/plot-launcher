@@ -59,3 +59,12 @@ jobs:
         uses: actions/attest-build-provenance@v2
         with:
           subject-checksums: dist/checksums.txt
+
+  macos:
+    name: Package the macOS app
+    needs: release
+    uses: ./.github/workflows/macos-package.yml
+    with:
+      tag: ${{ github.ref_name }}
+      upload: true
+    secrets: inherit

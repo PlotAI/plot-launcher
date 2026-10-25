@@ -227,7 +227,11 @@ v*) TAG=$VERSION ;;
 esac
 VERSION_NUMBER=${TAG#v}
 
-ASSET="plot-launcher_${VERSION_NUMBER}_${os}_${arch}.tar.gz"
+if [ "$os" = darwin ]; then
+	ASSET="plot-launcher_${VERSION_NUMBER}_darwin_universal.zip"
+else
+	ASSET="plot-launcher_${VERSION_NUMBER}_${os}_${arch}.tar.gz"
+fi
 BASE_URL=${RELEASE_BASE_URL:-"https://github.com/$REPOSITORY/releases/download/$TAG"}
 
 if [ -z "$RELEASE_BASE_URL" ] && [ -n "$TOKEN" ] && [ -z "$RELEASE_JSON" ]; then
@@ -282,22 +286,38 @@ fi
 [ "$expected" = "$actual" ] || fail "checksum verification failed for $ASSET"
 step "Verified SHA-256 checksum"
 
-tar -xzf "$TMP_DIR/$ASSET" -C "$TMP_DIR" || fail "could not extract $ASSET"
-[ -f "$TMP_DIR/$BINARY" ] || fail "$ASSET did not contain $BINARY"
-
 mkdir -p "$INSTALL_DIR" || fail "could not create $INSTALL_DIR"
 TARGET="$INSTALL_DIR/$BINARY"
-STAGED="$INSTALL_DIR/.$BINARY.$$"
-if cp "$TMP_DIR/$BINARY" "$STAGED" && chmod 0755 "$STAGED"; then
-	:
-else
-	fail "could not write to $INSTALL_DIR. Choose a writable directory with --dir."
-fi
-mv -f "$STAGED" "$TARGET" || fail "could not replace $TARGET"
-STAGED=
 
-if [ "$os" = darwin ] && command -v xattr >/dev/null 2>&1; then
-	xattr -d com.apple.quarantine "$TARGET" 2>/dev/null || true
+if [ "$os" = darwin ]; then
+	# The URL scheme needs an app bundle, so the bundle is what gets installed;
+	# the command line keeps working through a link to the bundled launcher.
+	APP_DIR=${PLOT_LAUNCHER_APP_DIR:-"$HOME/Applications"}
+	APP="$APP_DIR/Plot Launcher.app"
+	rm -rf "$TMP_DIR/app"
+	mkdir -p "$TMP_DIR/app" "$APP_DIR" || fail "could not create $APP_DIR"
+	unzip -q "$TMP_DIR/$ASSET" -d "$TMP_DIR/app" || fail "could not extract $ASSET"
+	[ -d "$TMP_DIR/app/Plot Launcher.app" ] || fail "$ASSET did not contain Plot Launcher.app"
+	STAGED_APP="$APP_DIR/.Plot Launcher.app.$$"
+	rm -rf "$STAGED_APP"
+	mv "$TMP_DIR/app/Plot Launcher.app" "$STAGED_APP" || fail "could not write to $APP_DIR"
+	rm -rf "$APP"
+	mv "$STAGED_APP" "$APP" || fail "could not replace $APP"
+	if command -v xattr >/dev/null 2>&1; then
+		xattr -dr com.apple.quarantine "$APP" 2>/dev/null || true
+	fi
+	ln -sf "$APP/Contents/MacOS/$BINARY" "$TARGET" || fail "could not link $TARGET"
+else
+	tar -xzf "$TMP_DIR/$ASSET" -C "$TMP_DIR" || fail "could not extract $ASSET"
+	[ -f "$TMP_DIR/$BINARY" ] || fail "$ASSET did not contain $BINARY"
+	STAGED="$INSTALL_DIR/.$BINARY.$$"
+	if cp "$TMP_DIR/$BINARY" "$STAGED" && chmod 0755 "$STAGED"; then
+		:
+	else
+		fail "could not write to $INSTALL_DIR. Choose a writable directory with --dir."
+	fi
+	mv -f "$STAGED" "$TARGET" || fail "could not replace $TARGET"
+	STAGED=
 fi
 
 # A browser link reaches the launcher through the operating system, so the web
@@ -323,6 +343,14 @@ EOF
 	fi
 	if command -v update-desktop-database >/dev/null 2>&1; then
 		update-desktop-database "$applications" >/dev/null 2>&1 || true
+	fi
+}
+
+# LaunchServices only claims the plot:// scheme once it knows about the bundle.
+register_app() {
+	lsregister=/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister
+	if [ -x "$lsregister" ]; then
+		"$lsregister" -f "$1" >/dev/null 2>&1 || true
 	fi
 }
 
@@ -356,5 +384,9 @@ printf '  plot-launcher\n'
 
 if [ "$os" = linux ]; then
 	register_scheme
+elif [ "$os" = darwin ]; then
+	register_app "$APP"
+	step "Registered plot:// links with $APP"
+	printf '  app       %s\n' "$APP"
 fi
 printf '\nUpgrade later by running this installer again; uninstall with\n  rm %s\n' "$TARGET"
