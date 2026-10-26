@@ -378,8 +378,8 @@ case ":$PATH:" in
 esac
 
 printf '\n%sNext steps%s\n' "$bold" "$reset"
-printf '  plot-launcher settings set-base-directory ~/plot-workspaces\n'
-printf '  plot-launcher settings set-editor "code --reuse-window"\n'
+printf '  plot-launcher settings set-base-directory ~/plot-repositories\n'
+printf '  plot-launcher settings set-editor "/absolute/path/to/editor --reuse-window"\n'
 printf '  plot-launcher\n'
 
 if [ "$os" = linux ]; then
