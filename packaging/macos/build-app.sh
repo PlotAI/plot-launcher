@@ -89,11 +89,24 @@ swiftc -O -swift-version 5 \
 	-o "$work/PlotLauncher" \
 	"$root/packaging/macos/shim/main.swift"
 
+echo "→ building the app icon"
+iconset="$work/AppIcon.iconset"
+mkdir -p "$iconset"
+for size in 16 32 128 256 512; do
+	sips -z $size $size "$root/packaging/macos/icon/AppIcon-1024.png" \
+		--out "$iconset/icon_${size}x${size}.png" >/dev/null
+	double=$((size * 2))
+	sips -z $double $double "$root/packaging/macos/icon/AppIcon-1024.png" \
+		--out "$iconset/icon_${size}x${size}@2x.png" >/dev/null
+done
+iconutil -c icns "$iconset" -o "$work/AppIcon.icns"
+
 app="$output/Plot Launcher.app"
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$work/plot-launcher" "$app/Contents/MacOS/plot-launcher"
 cp "$work/PlotLauncher" "$app/Contents/MacOS/PlotLauncher"
+cp "$work/AppIcon.icns" "$app/Contents/Resources/AppIcon.icns"
 sed -e "s|__VERSION__|$bundle_version|g" -e "s|__BUNDLE_ID__|$bundle_id|g" \
 	"$root/packaging/macos/Info.plist" >"$app/Contents/Info.plist"
 printf 'APPL????' >"$app/Contents/PkgInfo"
