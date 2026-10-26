@@ -56,11 +56,6 @@ jobs:
           keychain="$RUNNER_TEMP/signing.keychain-db"
           echo "$MACOS_CERTIFICATE" | tr -d '\n' | openssl base64 -d -A -out "$p12"
 
-          # Structure only, never key material: shows whether the p12 carries a
-          # private key alongside the certificate.
-          openssl pkcs12 -in "$p12" -info -noout -passin "pass:$password" 2>&1 |
-            sed -e 's/^/p12: /'
-
           security create-keychain -p actions "$keychain"
           security set-keychain-settings -lut 21600 "$keychain"
           security default-keychain -s "$keychain"
@@ -78,8 +73,6 @@ jobs:
           # this separates a certificate-only export from a signing problem.
           identities=$(security find-identity -v -p codesigning "$keychain")
           echo "$identities"
-          security find-identity -p codesigning "$keychain" |
-            sed -e 's/^/all identities: /'
           if ! echo "$identities" | grep -q "Developer ID Application"; then
             echo "no Developer ID Application identity is available." >&2
             echo "Export the .p12 from Keychain Access > My Certificates, choosing" >&2
