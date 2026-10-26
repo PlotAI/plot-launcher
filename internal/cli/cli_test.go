@@ -187,24 +187,25 @@ func getWithRetry(t *testing.T, target string) *http.Response {
 	}
 }
 
-func TestServeCommandIsAnAlias(t *testing.T) {
+func TestRunWithoutArgumentsReportsListenErrors(t *testing.T) {
 	runner, _, stderr := newTestRunner(t)
 	runner.listen = func() (net.Listener, error) { return nil, errors.New("listen failed") }
 
-	if code := runner.Run(context.Background(), []string{"serve"}); code != 1 {
-		t.Fatalf("serve exit code = %d, want 1", code)
+	if code := runner.Run(context.Background(), nil); code != 1 {
+		t.Fatalf("exit code = %d, want 1", code)
 	}
 	if !strings.Contains(stderr.String(), "listen failed") {
 		t.Fatalf("stderr = %q, want the listen error", stderr.String())
 	}
 }
 
-func TestServeRejectsArguments(t *testing.T) {
+func TestServeCommandIsRemoved(t *testing.T) {
 	runner, _, _ := newTestRunner(t)
 
+	// The Protocol Handler starts without a command, so serve is not a command.
 	for _, args := range [][]string{
+		{"serve"},
 		{"serve", "--host", "::"},
-		{"serve", "--port", "9000"},
 		{"serve", "extra"},
 	} {
 		if code := runner.Run(context.Background(), args); code != 2 {

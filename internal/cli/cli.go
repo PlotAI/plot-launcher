@@ -33,20 +33,16 @@ const usage = `Plot Launcher
 
 Usage:
   plot-launcher [command]
+  plot-launcher "plot://open?url=<pull request URL>"
 
-Run plot-launcher without a command to start the Protocol Handler on
-http://127.0.0.1:8765. It runs in the foreground until it is stopped.
+Without a command, plot-launcher serves the Protocol Handler on
+http://127.0.0.1:8765 until it is stopped.
 
 Commands:
-  serve                                      Start the Protocol Handler (default)
   settings show                              Print Launcher Settings as JSON
   settings set-editor <command>              Set editor
   settings set-base-directory <path>         Set base directory
   version                                    Print the Plot Launcher version
-
-A registered browser link opens a pull request directly:
-
-  plot-launcher "plot://open?url=<pull request URL>"
 `
 
 // Runner executes Plot Launcher commands.
@@ -95,12 +91,6 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 	}
 
 	switch args[0] {
-	case "serve":
-		if len(args) != 1 {
-			fmt.Fprintln(r.stderr, "serve accepts no arguments")
-			return 2
-		}
-		return r.runServe(ctx)
 	case "settings":
 		return r.runSettings(args[1:])
 	case "version", "-v", "--version":

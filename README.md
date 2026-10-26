@@ -1,10 +1,8 @@
 # Plot Launcher
 
-Plot Launcher is the Go/CLI companion to Plot: it opens a pull request in your editor from a `plot://` browser link or from the loopback Protocol Handler on `http://127.0.0.1:8765`.
+Opens a Plot pull request in your editor.
 
 ## Install
-
-macOS releases are universal; Linux and Windows releases are `amd64` and `arm64`. On macOS the installer puts `Plot Launcher.app` in `~/Applications` and links `plot-launcher` to it.
 
 macOS and Linux:
 
@@ -18,42 +16,35 @@ Windows (PowerShell):
 Invoke-RestMethod https://github.com/PlotAI/plot-launcher/releases/latest/download/install.ps1 | Invoke-Expression
 ```
 
-Both installers verify the archive against the release `checksums.txt` and install `plot-launcher` into `~/.local/bin` (`%LOCALAPPDATA%\Plot\bin` on Windows). Re-run the installer to upgrade, or delete the binary to uninstall.
+## Uninstall
 
-Pin a release or choose a directory:
+macOS:
 
 ```sh
-curl -fsSL https://github.com/PlotAI/plot-launcher/releases/latest/download/install.sh \
-  | sh -s -- --version v0.2.0 --dir "$HOME/bin"
+rm -rf ~/Applications/"Plot Launcher.app" ~/.local/bin/plot-launcher
 ```
 
-`install.sh` also accepts `--help` and honors `PLOT_LAUNCHER_VERSION`, `PLOT_LAUNCHER_INSTALL_DIR`, `PLOT_LAUNCHER_REPOSITORY`, `PLOT_LAUNCHER_RELEASE_BASE_URL`, `GITHUB_TOKEN`/`GH_TOKEN`, and `NO_COLOR`. For a private repository, fetch the installer with `gh release download v0.2.0 --repo PlotAI/plot-launcher --pattern install.sh` and run it with a token.
+Linux:
 
-## Settings
+```sh
+rm -f ~/.local/bin/plot-launcher ~/.local/share/applications/plot.desktop
+```
 
-Settings live in `~/.config/plot-launcher/settings.json` on Linux, `~/Library/Application Support/plot-launcher/settings.json` on macOS, and `%AppData%\plot-launcher\settings.json` on Windows. Set `PLOT_LAUNCHER_CONFIG_DIR` to store them elsewhere.
+Windows (PowerShell):
+
+```powershell
+Remove-Item -Recurse -Force "$env:LOCALAPPDATA\Plot\bin"
+Remove-Item -Recurse -Force "HKCU:\Software\Classes\plot"
+```
+
+## Preferences
 
 ```sh
 plot-launcher settings set-base-directory ~/plot-workspaces
-plot-launcher settings set-editor "code --reuse-window"
+plot-launcher settings set-editor "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code --reuse-window"
 plot-launcher settings show
 ```
 
-Each repository keeps one directory below the base directory, with one branch per pull request, so git switches between pull requests for you. Git authentication comes from your git credential configuration. A link opened from a browser runs without your shell `PATH`, so point the editor at an absolute path such as `/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code`.
+Settings live in `~/.config/plot-launcher/settings.json` on Linux, `~/Library/Application Support/plot-launcher/settings.json` on macOS, and `%AppData%\plot-launcher\settings.json` on Windows. Set `PLOT_LAUNCHER_CONFIG_DIR` to keep them elsewhere.
 
-## Browser links
-
-```text
-plot://open?url=<pull request URL>
-```
-
-The installers register that scheme — a desktop entry on Linux, a registry key on Windows, an app bundle on macOS — so a link opens a pull request without the page knowing the loopback address or port.
-
-## Build and test
-
-```sh
-go build -o bin/plot-launcher ./cmd/plot-launcher
-go test ./...
-```
-
-Go 1.27.3 and `git` are required.
+Use an absolute editor path: a link opened from a browser runs without your shell `PATH`.
