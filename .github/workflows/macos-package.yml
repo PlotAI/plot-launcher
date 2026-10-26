@@ -58,15 +58,19 @@ jobs:
 
           security create-keychain -p actions "$keychain"
           security set-keychain-settings -lut 21600 "$keychain"
+          security default-keychain -s "$keychain"
           security unlock-keychain -p actions "$keychain"
-          if ! security import "$p12" -P "$password" -A -t cert -f pkcs12 -k "$keychain"; then
-            echo "importing the .p12 failed: MACOS_CERTIFICATE_PASSWORD does not open" >&2
-            echo "MACOS_CERTIFICATE, or the file is not a PKCS#12 export with a private key" >&2
+          # Let security derive the item types: -t cert rejects a p12 that also
+          # carries the private key with SecItemCopyMatching.
+          if ! security import "$p12" -P "$password" -A -f pkcs12 \
+            -T /usr/bin/codesign -k "$keychain"; then
+            echo "importing the .p12 failed; check MACOS_CERTIFICATE and MACOS_CERTIFICATE_PASSWORD" >&2
             exit 1
           fi
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k actions "$keychain"
           security list-keychain -d user -s "$keychain"
           rm "$p12"
+          security find-identity -v -p codesigning
 
       - name: Build and sign the app
         env:
