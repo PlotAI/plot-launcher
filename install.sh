@@ -13,6 +13,8 @@
 #   PLOT_LAUNCHER_VERSION      Same as --version
 #   PLOT_LAUNCHER_INSTALL_DIR  Same as --dir
 #   PLOT_LAUNCHER_REPOSITORY   Release repository (default: PlotAI/plot-launcher)
+#   PLOT_LAUNCHER_APP_DIR      macOS only: where Plot Launcher.app goes
+#                              (default: /Applications)
 #   PLOT_LAUNCHER_RELEASE_BASE_URL  Mirror serving release assets for a tag;
 #                              requires an explicit --version
 #   GITHUB_TOKEN / GH_TOKEN    Token used when the repository is private
@@ -60,6 +62,8 @@ Environment:
   PLOT_LAUNCHER_VERSION      Same as --version
   PLOT_LAUNCHER_INSTALL_DIR  Same as --dir
   PLOT_LAUNCHER_REPOSITORY   Release repository (default: PlotAI/plot-launcher)
+  PLOT_LAUNCHER_APP_DIR      macOS only: where Plot Launcher.app goes
+                             (default: /Applications)
   PLOT_LAUNCHER_RELEASE_BASE_URL  Mirror serving release assets for a tag;
                              requires an explicit --version
   GITHUB_TOKEN / GH_TOKEN    Token used when the repository is private
@@ -292,10 +296,12 @@ TARGET="$INSTALL_DIR/$BINARY"
 if [ "$os" = darwin ]; then
 	# The URL scheme needs an app bundle, so the bundle is what gets installed;
 	# the command line keeps working through a link to the bundled launcher.
-	APP_DIR=${PLOT_LAUNCHER_APP_DIR:-"$HOME/Applications"}
+	APP_DIR=${PLOT_LAUNCHER_APP_DIR:-/Applications}
 	APP="$APP_DIR/Plot Launcher.app"
+	[ -w "$APP_DIR" ] ||
+		fail "could not write to $APP_DIR. Run the installer with sudo, or set PLOT_LAUNCHER_APP_DIR to a writable directory."
 	rm -rf "$TMP_DIR/app"
-	mkdir -p "$TMP_DIR/app" "$APP_DIR" || fail "could not create $APP_DIR"
+	mkdir -p "$TMP_DIR/app" || fail "could not create $TMP_DIR/app"
 	unzip -q "$TMP_DIR/$ASSET" -d "$TMP_DIR/app" || fail "could not extract $ASSET"
 	[ -d "$TMP_DIR/app/Plot Launcher.app" ] || fail "$ASSET did not contain Plot Launcher.app"
 	STAGED_APP="$APP_DIR/.Plot Launcher.app.$$"
@@ -305,6 +311,12 @@ if [ "$os" = darwin ]; then
 	mv "$STAGED_APP" "$APP" || fail "could not replace $APP"
 	if command -v xattr >/dev/null 2>&1; then
 		xattr -dr com.apple.quarantine "$APP" 2>/dev/null || true
+	fi
+	# An earlier release installed here. Leaving it behind would give LaunchServices
+	# two apps claiming plot://.
+	LEGACY_APP="$HOME/Applications/Plot Launcher.app"
+	if [ "$APP" != "$LEGACY_APP" ] && [ -d "$LEGACY_APP" ]; then
+		rm -rf "$LEGACY_APP" && step "Removed the older copy in $LEGACY_APP"
 	fi
 	ln -sf "$APP/Contents/MacOS/$BINARY" "$TARGET" || fail "could not link $TARGET"
 else

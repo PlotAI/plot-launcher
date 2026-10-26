@@ -21,7 +21,8 @@ Invoke-RestMethod https://github.com/PlotAI/plot-launcher/releases/latest/downlo
 macOS:
 
 ```sh
-rm -rf ~/Applications/"Plot Launcher.app" ~/.local/bin/plot-launcher
+sudo rm -rf "/Applications/Plot Launcher.app"
+rm -f ~/.local/bin/plot-launcher
 ```
 
 Linux:
