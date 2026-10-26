@@ -60,17 +60,25 @@ jobs:
           security set-keychain-settings -lut 21600 "$keychain"
           security default-keychain -s "$keychain"
           security unlock-keychain -p actions "$keychain"
-          # Let security derive the item types: -t cert rejects a p12 that also
-          # carries the private key with SecItemCopyMatching.
-          if ! security import "$p12" -P "$password" -A -f pkcs12 \
-            -T /usr/bin/codesign -k "$keychain"; then
-            echo "importing the .p12 failed; check MACOS_CERTIFICATE and MACOS_CERTIFICATE_PASSWORD" >&2
+          if ! security import "$p12" -P "$password" -A -f pkcs12 -k "$keychain" \
+            2>"$RUNNER_TEMP/import.err"; then
+            sed -e 's/^/security import: /' "$RUNNER_TEMP/import.err" >&2
+          fi
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k actions "$keychain" >/dev/null 2>&1 || true
+          security list-keychain -d user -s "$keychain"
+          rm -f "$p12"
+
+          # The identity only exists when the p12 carried its private key, so
+          # this separates a certificate-only export from a signing problem.
+          identities=$(security find-identity -v -p codesigning "$keychain")
+          echo "$identities"
+          if ! echo "$identities" | grep -q "Developer ID Application"; then
+            echo "no Developer ID Application identity is available." >&2
+            echo "Export the .p12 from Keychain Access > My Certificates, choosing" >&2
+            echo "the identity with its private key nested inside it." >&2
             exit 1
           fi
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k actions "$keychain"
-          security list-keychain -d user -s "$keychain"
-          rm "$p12"
-          security find-identity -v -p codesigning
 
       - name: Build and sign the app
         env:
