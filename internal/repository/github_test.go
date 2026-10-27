@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -64,13 +65,17 @@ func TestGitHubControllerChecksOutPullRequest(t *testing.T) {
 
 	base := t.TempDir()
 	pullRequest := PullRequest{Owner: "owner", Name: "name", Number: 7}
-	workingDirectory, err := controller.CheckoutPRAndPrepareWorkingDirectory(context.Background(), pullRequest, base)
+	checkout, err := controller.CheckoutPRAndPrepareWorkingDirectory(context.Background(), pullRequest, base)
 	if err != nil {
 		t.Fatalf("CheckoutPRAndPrepareWorkingDirectory: %v", err)
 	}
+	workingDirectory := checkout.WorkingDirectory
 	wantDirectory := pullRequest.WorkingDirectory(base)
 	if workingDirectory != wantDirectory {
 		t.Fatalf("working directory = %q, want %q", workingDirectory, wantDirectory)
+	}
+	if len(checkout.Notices) != 0 {
+		t.Fatalf("notices = %+v, want none", checkout.Notices)
 	}
 	if content := readFile(t, filepath.Join(workingDirectory, "README.md")); content != testRemoteContent {
 		t.Fatalf("README.md = %q, want %q", content, testRemoteContent)
@@ -83,12 +88,12 @@ func TestGitHubControllerChecksOutPullRequest(t *testing.T) {
 	}
 
 	testRepository.update(t, "updated pull request content")
-	secondDirectory, err := controller.CheckoutPRAndPrepareWorkingDirectory(context.Background(), pullRequest, base)
+	secondCheckout, err := controller.CheckoutPRAndPrepareWorkingDirectory(context.Background(), pullRequest, base)
 	if err != nil {
 		t.Fatalf("second CheckoutPRAndPrepareWorkingDirectory: %v", err)
 	}
-	if secondDirectory != workingDirectory {
-		t.Fatalf("working directory = %q, want %q", secondDirectory, workingDirectory)
+	if secondCheckout.WorkingDirectory != workingDirectory {
+		t.Fatalf("working directory = %q, want %q", secondCheckout.WorkingDirectory, workingDirectory)
 	}
 	if content := readFile(t, filepath.Join(workingDirectory, "README.md")); content != "updated pull request content" {
 		t.Fatalf("README.md = %q, want %q", content, "updated pull request content")
@@ -102,17 +107,19 @@ func TestGitHubControllerSwitchesPullRequestsInOneDirectory(t *testing.T) {
 
 	base := t.TempDir()
 	first := PullRequest{Owner: "owner", Name: "name", Number: 7}
-	firstDirectory, err := controller.CheckoutPRAndPrepareWorkingDirectory(context.Background(), first, base)
+	firstCheckout, err := controller.CheckoutPRAndPrepareWorkingDirectory(context.Background(), first, base)
 	if err != nil {
 		t.Fatalf("first checkout: %v", err)
 	}
+	firstDirectory := firstCheckout.WorkingDirectory
 
 	testRepository.pushPullRequest(t, 8, "other pull request content")
 	second := PullRequest{Owner: "owner", Name: "name", Number: 8}
-	secondDirectory, err := controller.CheckoutPRAndPrepareWorkingDirectory(context.Background(), second, base)
+	secondCheckout, err := controller.CheckoutPRAndPrepareWorkingDirectory(context.Background(), second, base)
 	if err != nil {
 		t.Fatalf("second checkout: %v", err)
 	}
+	secondDirectory := secondCheckout.WorkingDirectory
 	if secondDirectory != firstDirectory {
 		t.Fatalf("working directory = %q, want the repository directory %q", secondDirectory, firstDirectory)
 	}
@@ -123,10 +130,11 @@ func TestGitHubControllerSwitchesPullRequestsInOneDirectory(t *testing.T) {
 		t.Fatalf("README.md = %q, want %q", content, "other pull request content")
 	}
 
-	backDirectory, err := controller.CheckoutPRAndPrepareWorkingDirectory(context.Background(), first, base)
+	backCheckout, err := controller.CheckoutPRAndPrepareWorkingDirectory(context.Background(), first, base)
 	if err != nil {
 		t.Fatalf("checkout of the first pull request again: %v", err)
 	}
+	backDirectory := backCheckout.WorkingDirectory
 	if backDirectory != firstDirectory {
 		t.Fatalf("working directory = %q, want %q", backDirectory, firstDirectory)
 	}
@@ -138,22 +146,303 @@ func TestGitHubControllerSwitchesPullRequestsInOneDirectory(t *testing.T) {
 	}
 }
 
-func TestGitHubControllerRejectsDifferentRemote(t *testing.T) {
-	requireGit(t)
+func TestGitHubControllerFollowsMovedRepository(t *testing.T) {
+	testRepository := newTestRepository(t)
 	controller := NewGitHubController()
-	controller.remoteURL = func(PullRequest) string { return "https://github.com/owner/name.git" }
+	controller.remoteURL = func(PullRequest) string { return testRepository.remoteURL() }
 
 	base := t.TempDir()
 	pullRequest := PullRequest{Owner: "owner", Name: "name", Number: 7}
-	workingDirectory := pullRequest.WorkingDirectory(base)
-	if err := os.MkdirAll(workingDirectory, 0o755); err != nil {
-		t.Fatalf("create working directory: %v", err)
+	firstCheckout, err := controller.CheckoutPRAndPrepareWorkingDirectory(context.Background(), pullRequest, base)
+	if err != nil {
+		t.Fatalf("first checkout: %v", err)
 	}
-	runGit(t, workingDirectory, "init", "--quiet")
-	runGit(t, workingDirectory, "remote", "add", "origin", "https://github.com/other/repository.git")
+	workingDirectory := firstCheckout.WorkingDirectory
 
-	if _, err := controller.CheckoutPRAndPrepareWorkingDirectory(context.Background(), pullRequest, base); err == nil {
+	// A transferred repository answers at its new location with the same
+	// pull request head.
+	moved := filepath.Join(t.TempDir(), "moved.git")
+	runGit(t, base, "clone", "--quiet", "--mirror", testRepository.bare, moved)
+	controller.remoteURL = func(PullRequest) string { return "file://" + moved }
+
+	secondCheckout, err := controller.CheckoutPRAndPrepareWorkingDirectory(context.Background(), pullRequest, base)
+	if err != nil {
+		t.Fatalf("checkout of the moved repository: %v", err)
+	}
+	if origin := runGit(t, workingDirectory, "remote", "get-url", "origin"); origin != "file://"+moved {
+		t.Fatalf("origin = %q, want %q", origin, "file://"+moved)
+	}
+	if content := readFile(t, filepath.Join(workingDirectory, "README.md")); content != testRemoteContent {
+		t.Fatalf("README.md = %q, want %q", content, testRemoteContent)
+	}
+	if len(secondCheckout.Notices) != 1 || secondCheckout.Notices[0].Code != NoticeRemoteUpdated {
+		t.Fatalf("notices = %+v, want one %q notice", secondCheckout.Notices, NoticeRemoteUpdated)
+	}
+}
+
+func TestGitHubControllerRejectsDifferentRemote(t *testing.T) {
+	testRepository := newTestRepository(t)
+	controller := NewGitHubController()
+	controller.remoteURL = func(PullRequest) string { return testRepository.remoteURL() }
+
+	base := t.TempDir()
+	pullRequest := PullRequest{Owner: "owner", Name: "name", Number: 7}
+	if _, err := controller.CheckoutPRAndPrepareWorkingDirectory(context.Background(), pullRequest, base); err != nil {
+		t.Fatalf("first checkout: %v", err)
+	}
+
+	// Another repository carrying an unrelated pull request 7 must not
+	// replace the checkout.
+	other := newTestRepository(t)
+	other.pushPullRequest(t, 7, "unrelated pull request content")
+	controller.remoteURL = func(PullRequest) string { return other.remoteURL() }
+
+	_, err := controller.CheckoutPRAndPrepareWorkingDirectory(context.Background(), pullRequest, base)
+	if err == nil {
 		t.Fatal("CheckoutPRAndPrepareWorkingDirectory with a different remote returned no error")
+	}
+	var checkoutError *CheckoutError
+	if !errors.As(err, &checkoutError) || checkoutError.Code != CodeRemoteMismatch {
+		t.Fatalf("error = %v, want a %q error", err, CodeRemoteMismatch)
+	}
+	if checkoutError.Remedy == "" {
+		t.Fatal("remedy is empty")
+	}
+}
+
+func TestGitHubControllerRestoresUncommittedChanges(t *testing.T) {
+	testRepository := newTestRepository(t)
+	controller := NewGitHubController()
+	controller.remoteURL = func(PullRequest) string { return testRepository.remoteURL() }
+
+	base := t.TempDir()
+	pullRequest := PullRequest{Owner: "owner", Name: "name", Number: 7}
+	checkout, err := controller.CheckoutPRAndPrepareWorkingDirectory(context.Background(), pullRequest, base)
+	if err != nil {
+		t.Fatalf("first checkout: %v", err)
+	}
+	workingDirectory := checkout.WorkingDirectory
+
+	writeFile(t, filepath.Join(workingDirectory, "README.md"), "local edit")
+	writeFile(t, filepath.Join(workingDirectory, "notes.md"), "local note")
+
+	// An editor has the repository open with uncommitted work: opening the
+	// pull request again keeps that work.
+	second, err := controller.CheckoutPRAndPrepareWorkingDirectory(context.Background(), pullRequest, base)
+	if err != nil {
+		t.Fatalf("checkout with uncommitted changes: %v", err)
+	}
+	if len(second.Notices) != 0 {
+		t.Fatalf("notices = %+v, want none", second.Notices)
+	}
+	if content := readFile(t, filepath.Join(workingDirectory, "README.md")); content != "local edit" {
+		t.Fatalf("README.md = %q, want %q", content, "local edit")
+	}
+	if content := readFile(t, filepath.Join(workingDirectory, "notes.md")); content != "local note" {
+		t.Fatalf("notes.md = %q, want %q", content, "local note")
+	}
+	if stashes := runGit(t, workingDirectory, "stash", "list"); stashes != "" {
+		t.Fatalf("stash list = %q, want empty", stashes)
+	}
+
+	// Work that another pull request does not touch follows the branch switch.
+	runGit(t, workingDirectory, "checkout", "--quiet", "--", "README.md")
+	testRepository.pushPullRequest(t, 8, "other pull request content")
+	third, err := controller.CheckoutPRAndPrepareWorkingDirectory(context.Background(), PullRequest{Owner: "owner", Name: "name", Number: 8}, base)
+	if err != nil {
+		t.Fatalf("checkout of another pull request: %v", err)
+	}
+	if len(third.Notices) != 0 {
+		t.Fatalf("notices = %+v, want none", third.Notices)
+	}
+	if branch := runGit(t, workingDirectory, "rev-parse", "--abbrev-ref", "HEAD"); branch != "plot/pr-8" {
+		t.Fatalf("branch = %q, want %q", branch, "plot/pr-8")
+	}
+	if content := readFile(t, filepath.Join(workingDirectory, "README.md")); content != "other pull request content" {
+		t.Fatalf("README.md = %q, want %q", content, "other pull request content")
+	}
+	if content := readFile(t, filepath.Join(workingDirectory, "notes.md")); content != "local note" {
+		t.Fatalf("notes.md = %q, want %q", content, "local note")
+	}
+	if stashes := runGit(t, workingDirectory, "stash", "list"); stashes != "" {
+		t.Fatalf("stash list = %q, want empty", stashes)
+	}
+}
+
+func TestGitHubControllerKeepsConflictingChangesInStash(t *testing.T) {
+	testRepository := newTestRepository(t)
+	controller := NewGitHubController()
+	controller.remoteURL = func(PullRequest) string { return testRepository.remoteURL() }
+
+	base := t.TempDir()
+	pullRequest := PullRequest{Owner: "owner", Name: "name", Number: 7}
+	checkout, err := controller.CheckoutPRAndPrepareWorkingDirectory(context.Background(), pullRequest, base)
+	if err != nil {
+		t.Fatalf("first checkout: %v", err)
+	}
+	workingDirectory := checkout.WorkingDirectory
+	writeFile(t, filepath.Join(workingDirectory, "README.md"), "local edit")
+
+	// The pull request moves on under the local edit, so restoring it would
+	// mean resolving a conflict: the edit stays in the stash instead.
+	testRepository.update(t, "updated pull request content")
+	second, err := controller.CheckoutPRAndPrepareWorkingDirectory(context.Background(), pullRequest, base)
+	if err != nil {
+		t.Fatalf("checkout with a conflicting change: %v", err)
+	}
+	if content := readFile(t, filepath.Join(workingDirectory, "README.md")); content != "updated pull request content" {
+		t.Fatalf("README.md = %q, want %q", content, "updated pull request content")
+	}
+	if status := runGit(t, workingDirectory, "status", "--porcelain"); status != "" {
+		t.Fatalf("status = %q, want a clean working tree", status)
+	}
+	if len(second.Notices) != 1 || second.Notices[0].Code != NoticeStashKept {
+		t.Fatalf("notices = %+v, want one %q notice", second.Notices, NoticeStashKept)
+	}
+	if stashed := runGit(t, workingDirectory, "stash", "list"); !strings.Contains(stashed, "plot: changes on plot/pr-7") {
+		t.Fatalf("stash list = %q, want the plot stash entry", stashed)
+	}
+
+	// The set aside work is still recoverable from the stash entry.
+	if stashed := runGit(t, workingDirectory, "stash", "show", "--patch", "stash@{0}"); !strings.Contains(stashed, "+local edit") {
+		t.Fatalf("stash entry = %q, want it to hold the local edit", stashed)
+	}
+}
+
+func TestGitHubControllerRestoresChangesWhenTheCheckoutFails(t *testing.T) {
+	testRepository := newTestRepository(t)
+	controller := NewGitHubController()
+	controller.remoteURL = func(PullRequest) string { return testRepository.remoteURL() }
+
+	base := t.TempDir()
+	pullRequest := PullRequest{Owner: "owner", Name: "name", Number: 7}
+	checkout, err := controller.CheckoutPRAndPrepareWorkingDirectory(context.Background(), pullRequest, base)
+	if err != nil {
+		t.Fatalf("first checkout: %v", err)
+	}
+	workingDirectory := checkout.WorkingDirectory
+	writeFile(t, filepath.Join(workingDirectory, "README.md"), "local edit")
+
+	// Pull request 9 does not exist, so the fetch fails after the changes
+	// were set aside; they must come back.
+	missing := PullRequest{Owner: "owner", Name: "name", Number: 9}
+	if _, err := controller.CheckoutPRAndPrepareWorkingDirectory(context.Background(), missing, base); err == nil {
+		t.Fatal("checkout of a missing pull request returned no error")
+	}
+	if content := readFile(t, filepath.Join(workingDirectory, "README.md")); content != "local edit" {
+		t.Fatalf("README.md = %q, want %q", content, "local edit")
+	}
+	if stashes := runGit(t, workingDirectory, "stash", "list"); stashes != "" {
+		t.Fatalf("stash list = %q, want empty", stashes)
+	}
+}
+
+func TestGitHubControllerKeepsLocalCommits(t *testing.T) {
+	testRepository := newTestRepository(t)
+	controller := NewGitHubController()
+	controller.remoteURL = func(PullRequest) string { return testRepository.remoteURL() }
+
+	base := t.TempDir()
+	pullRequest := PullRequest{Owner: "owner", Name: "name", Number: 7}
+	checkout, err := controller.CheckoutPRAndPrepareWorkingDirectory(context.Background(), pullRequest, base)
+	if err != nil {
+		t.Fatalf("first checkout: %v", err)
+	}
+	workingDirectory := checkout.WorkingDirectory
+
+	writeFile(t, filepath.Join(workingDirectory, "local.md"), "local work")
+	runGit(t, workingDirectory, "add", ".")
+	runGit(t, workingDirectory, "commit", "--quiet", "-m", "local work")
+	localCommit := runGit(t, workingDirectory, "rev-parse", "HEAD")
+
+	// The pull request moves on, and the branch is reset to its head: the
+	// local commit must not become unreachable.
+	testRepository.update(t, "updated pull request content")
+	second, err := controller.CheckoutPRAndPrepareWorkingDirectory(context.Background(), pullRequest, base)
+	if err != nil {
+		t.Fatalf("checkout with a local commit: %v", err)
+	}
+	if head := runGit(t, workingDirectory, "rev-parse", "HEAD"); head == localCommit {
+		t.Fatal("branch was not reset to the pull request head")
+	}
+	if branch := runGit(t, workingDirectory, "rev-parse", "--abbrev-ref", "HEAD"); branch != "plot/pr-7" {
+		t.Fatalf("branch = %q, want %q", branch, "plot/pr-7")
+	}
+	if saved := runGit(t, workingDirectory, "rev-parse", "plot/pr-7-local"); saved != localCommit {
+		t.Fatalf("plot/pr-7-local = %q, want %q", saved, localCommit)
+	}
+	if len(second.Notices) != 1 || second.Notices[0].Code != NoticeLocalCommitsKept {
+		t.Fatalf("notices = %+v, want one %q notice", second.Notices, NoticeLocalCommitsKept)
+	}
+
+	// Opening the same pull request again reports nothing: the branch now
+	// holds exactly what the launcher checked out.
+	third, err := controller.CheckoutPRAndPrepareWorkingDirectory(context.Background(), pullRequest, base)
+	if err != nil {
+		t.Fatalf("third checkout: %v", err)
+	}
+	if len(third.Notices) != 0 {
+		t.Fatalf("notices = %+v, want none", third.Notices)
+	}
+	if saved := runGit(t, workingDirectory, "rev-parse", "plot/pr-7-local"); saved != localCommit {
+		t.Fatalf("plot/pr-7-local = %q, want %q", saved, localCommit)
+	}
+}
+
+func TestSaveBranchKeepsDivergentHistory(t *testing.T) {
+	requireGit(t)
+	directory := t.TempDir()
+	path := filepath.Join(directory, "file.md")
+	runGit(t, directory, "init", "--quiet", "-b", "main")
+	writeFile(t, path, "one")
+	runGit(t, directory, "add", ".")
+	runGit(t, directory, "commit", "--quiet", "-m", "one")
+	first := runGit(t, directory, "rev-parse", "HEAD")
+	writeFile(t, path, "two")
+	runGit(t, directory, "commit", "--quiet", "-am", "two")
+	second := runGit(t, directory, "rev-parse", "HEAD")
+
+	runGit(t, directory, "checkout", "--quiet", "-b", "side", first)
+	writeFile(t, path, "side")
+	runGit(t, directory, "commit", "--quiet", "-am", "side")
+	side := runGit(t, directory, "rev-parse", "HEAD")
+
+	controller := NewGitHubController()
+	saved, err := controller.saveBranch(context.Background(), directory, "plot/pr-7-local", side)
+	if err != nil {
+		t.Fatalf("saveBranch: %v", err)
+	}
+	if saved != "plot/pr-7-local" {
+		t.Fatalf("branch = %q, want %q", saved, "plot/pr-7-local")
+	}
+
+	// A commit that does not descend from the saved branch gets its own name,
+	// so the first branch is not rewritten.
+	divergent, err := controller.saveBranch(context.Background(), directory, "plot/pr-7-local", second)
+	if err != nil {
+		t.Fatalf("saveBranch divergent: %v", err)
+	}
+	if divergent != "plot/pr-7-local-2" {
+		t.Fatalf("branch = %q, want %q", divergent, "plot/pr-7-local-2")
+	}
+	if head := runGit(t, directory, "rev-parse", "plot/pr-7-local"); head != side {
+		t.Fatalf("plot/pr-7-local = %q, want %q", head, side)
+	}
+
+	// A descendant fast-forwards the existing branch.
+	runGit(t, directory, "checkout", "--quiet", "main")
+	writeFile(t, path, "three")
+	runGit(t, directory, "commit", "--quiet", "-am", "three")
+	third := runGit(t, directory, "rev-parse", "HEAD")
+	advanced, err := controller.saveBranch(context.Background(), directory, "plot/pr-7-local-2", third)
+	if err != nil {
+		t.Fatalf("saveBranch descendant: %v", err)
+	}
+	if advanced != "plot/pr-7-local-2" {
+		t.Fatalf("branch = %q, want %q", advanced, "plot/pr-7-local-2")
+	}
+	if head := runGit(t, directory, "rev-parse", "plot/pr-7-local-2"); head != third {
+		t.Fatalf("plot/pr-7-local-2 = %q, want %q", head, third)
 	}
 }
 

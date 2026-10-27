@@ -232,10 +232,14 @@ type stubSettings struct{ value settings.LauncherSettings }
 
 func (s stubSettings) Load() (settings.LauncherSettings, error) { return s.value, nil }
 
-type stubRepositories struct{ workingDirectory string }
+type stubRepositories struct {
+	workingDirectory string
+	notices          []repository.Notice
+	err              error
+}
 
-func (s stubRepositories) CheckoutPRAndPrepareWorkingDirectory(context.Context, repository.PullRequest, string) (string, error) {
-	return s.workingDirectory, nil
+func (s stubRepositories) CheckoutPRAndPrepareWorkingDirectory(context.Context, repository.PullRequest, string) (repository.Checkout, error) {
+	return repository.Checkout{WorkingDirectory: s.workingDirectory, Notices: s.notices}, s.err
 }
 
 type stubEditors struct{ directory string }
@@ -265,6 +269,55 @@ func TestSchemeURLOpensPullRequest(t *testing.T) {
 	}
 	if strings.TrimSpace(stdout.String()) != workingDirectory {
 		t.Fatalf("stdout = %q, want %q", stdout.String(), workingDirectory)
+	}
+}
+
+func TestSchemeURLReportsNotices(t *testing.T) {
+	runner, stdout, stderr := newTestRunner(t)
+	base := t.TempDir()
+	workingDirectory := filepath.Join(base, "graph-canvas")
+	runner.launcher = launcher.New(
+		stubSettings{value: settings.LauncherSettings{BaseDirectory: base, Editor: "code"}},
+		stubRepositories{
+			workingDirectory: workingDirectory,
+			notices:          []repository.Notice{{Code: repository.NoticeStashKept, Message: "uncommitted changes stay in the stash entry"}},
+		},
+		&stubEditors{},
+	)
+
+	code := runner.Run(context.Background(), []string{"plot://open?url=https://github.com/PlotAI/graph-canvas/pull/7"})
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0: %s", code, stderr)
+	}
+	if strings.TrimSpace(stdout.String()) != workingDirectory {
+		t.Fatalf("stdout = %q, want only the working directory", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "stash entry") {
+		t.Fatalf("stderr = %q, want the notice", stderr.String())
+	}
+}
+
+func TestSchemeURLReportsRemedy(t *testing.T) {
+	runner, _, stderr := newTestRunner(t)
+	base := t.TempDir()
+	runner.launcher = launcher.New(
+		stubSettings{value: settings.LauncherSettings{BaseDirectory: base, Editor: "code"}},
+		stubRepositories{err: &repository.CheckoutError{
+			Code:    repository.CodeRemoteMismatch,
+			Message: "working directory tracks another repository",
+			Remedy:  "remove the checkout and open the pull request again",
+		}},
+		&stubEditors{},
+	)
+
+	if code := runner.Run(context.Background(), []string{"plot://open?url=https://github.com/PlotAI/graph-canvas/pull/7"}); code != 1 {
+		t.Fatalf("exit code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "tracks another repository") {
+		t.Fatalf("stderr = %q, want the failure", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "remove the checkout and open the pull request again") {
+		t.Fatalf("stderr = %q, want the remedy", stderr.String())
 	}
 }
 

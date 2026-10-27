@@ -11,24 +11,26 @@ import (
 	"github.com/PlotAI/plot-launcher/internal/repository"
 )
 
-// Opener receives open requests and returns the prepared working directory.
+// Opener receives open requests and returns the prepared checkout.
 type Opener interface {
-	OpenInEditor(ctx context.Context, pullRequest repository.PullRequest) (string, error)
+	OpenInEditor(ctx context.Context, pullRequest repository.PullRequest) (repository.Checkout, error)
 }
 
 // OpenResult is the response to a completed open request.
 type OpenResult struct {
-	Repository       string `json:"repository"`
-	PullRequest      int    `json:"pull_request"`
-	WorkingDirectory string `json:"working_directory"`
+	Repository       string              `json:"repository"`
+	PullRequest      int                 `json:"pull_request"`
+	WorkingDirectory string              `json:"working_directory"`
+	Notices          []repository.Notice `json:"notices,omitempty"`
 }
 
 // NewOpenResult returns the response for a completed open request.
-func NewOpenResult(pullRequest repository.PullRequest, workingDirectory string) OpenResult {
+func NewOpenResult(pullRequest repository.PullRequest, checkout repository.Checkout) OpenResult {
 	return OpenResult{
 		Repository:       pullRequest.Repository(),
 		PullRequest:      pullRequest.Number,
-		WorkingDirectory: workingDirectory,
+		WorkingDirectory: checkout.WorkingDirectory,
+		Notices:          checkout.Notices,
 	}
 }
 
@@ -96,17 +98,27 @@ func (h *Handler) openInEditor(writer http.ResponseWriter, request *http.Request
 		"remote_address", request.RemoteAddr,
 	)
 
-	workingDirectory, err := h.opener.OpenInEditor(request.Context(), pullRequest)
+	checkout, err := h.opener.OpenInEditor(request.Context(), pullRequest)
 	if err != nil {
 		h.logger.Error("opening pull request in editor failed",
 			"repository", pullRequest.Repository(),
 			"pull_request", pullRequest.Number,
 			"error", err,
 		)
-		writeError(writer, http.StatusInternalServerError, err)
+		writeOpenFailure(writer, request, pullRequest, err)
 		return
 	}
-	writeJSON(writer, http.StatusOK, NewOpenResult(pullRequest, workingDirectory))
+	writeOpenSuccess(writer, request, pullRequest, checkout)
+}
+
+// ErrorResponse is the response to a failed request. Code, Remedy, and
+// Command tell a client which failure it was, what to do about it, and the
+// command that does it.
+type ErrorResponse struct {
+	Error   string `json:"error"`
+	Code    string `json:"code,omitempty"`
+	Remedy  string `json:"remedy,omitempty"`
+	Command string `json:"command,omitempty"`
 }
 
 func methodNotAllowed(writer http.ResponseWriter, methods ...string) {
@@ -115,11 +127,7 @@ func methodNotAllowed(writer http.ResponseWriter, methods ...string) {
 }
 
 func writeError(writer http.ResponseWriter, status int, err error) {
-	writer.Header().Set("Content-Type", "application/json")
-	writer.WriteHeader(status)
-	json.NewEncoder(writer).Encode(struct {
-		Error string `json:"error"`
-	}{Error: err.Error()})
+	writeJSON(writer, status, ErrorResponse{Error: err.Error()})
 }
 
 func writeJSON(writer http.ResponseWriter, status int, value any) {

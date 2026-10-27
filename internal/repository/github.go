@@ -41,12 +41,15 @@ func NewGitHubController() *GitHubController {
 // it out on the pull request's local branch, and returns the prepared working
 // directory. A repository keeps one working directory, so requesting another
 // pull request of the same repository switches that directory's branch.
-func (c *GitHubController) CheckoutPRAndPrepareWorkingDirectory(ctx context.Context, pullRequest PullRequest, baseDirectory string) (string, error) {
+// Uncommitted changes found in the working directory are set aside and
+// restored on the pull request, so an editor already editing the repository
+// does not block the checkout.
+func (c *GitHubController) CheckoutPRAndPrepareWorkingDirectory(ctx context.Context, pullRequest PullRequest, baseDirectory string) (Checkout, error) {
 	if err := pullRequest.Validate(); err != nil {
-		return "", err
+		return Checkout{}, err
 	}
 	if err := validateBaseDirectory(baseDirectory); err != nil {
-		return "", err
+		return Checkout{}, err
 	}
 
 	workingDirectory := pullRequest.WorkingDirectory(baseDirectory)
@@ -55,40 +58,123 @@ func (c *GitHubController) CheckoutPRAndPrepareWorkingDirectory(ctx context.Cont
 	defer lock.Unlock()
 
 	if err := os.MkdirAll(workingDirectory, 0o755); err != nil {
-		return "", fmt.Errorf("prepare working directory %s: %w", workingDirectory, err)
+		return Checkout{}, fmt.Errorf("prepare working directory %s: %w", workingDirectory, err)
 	}
 
+	var notices []Notice
 	remoteURL := c.remoteURL(pullRequest)
 	initialized, err := hasGitDirectory(workingDirectory)
 	if err != nil {
-		return "", err
+		return Checkout{}, err
 	}
 	if initialized {
-		origin, err := c.runGit(ctx, workingDirectory, "remote", "get-url", "origin")
+		notice, err := c.reconcileRemote(ctx, workingDirectory, remoteURL, pullRequest)
 		if err != nil {
-			return "", err
+			return Checkout{}, err
 		}
-		if origin != remoteURL {
-			return "", fmt.Errorf("working directory %s tracks %s instead of %s", workingDirectory, origin, remoteURL)
+		if notice != nil {
+			notices = append(notices, *notice)
 		}
 	} else {
 		if _, err := c.runGit(ctx, workingDirectory, "init", "--quiet"); err != nil {
-			return "", err
+			return Checkout{}, err
 		}
 		if _, err := c.runGit(ctx, workingDirectory, "remote", "add", "origin", remoteURL); err != nil {
-			return "", err
+			return Checkout{}, err
 		}
+	}
+
+	pending, err := c.stashWorkingTree(ctx, workingDirectory, pullRequest)
+	if err != nil {
+		return Checkout{}, err
 	}
 
 	headRef := fmt.Sprintf("pull/%d/head", pullRequest.Number)
 	if _, err := c.runGit(ctx, workingDirectory, "fetch", "--quiet", "--depth=1", "origin", headRef); err != nil {
+		return Checkout{}, c.checkoutFailed(ctx, workingDirectory, pending, err)
+	}
+	commitNotice, err := c.preserveLocalCommits(ctx, workingDirectory, pullRequest, "FETCH_HEAD")
+	if err != nil {
+		return Checkout{}, c.checkoutFailed(ctx, workingDirectory, pending, err)
+	}
+	if commitNotice != nil {
+		notices = append(notices, *commitNotice)
+	}
+	if _, err := c.runGit(ctx, workingDirectory, "checkout", "--quiet", "-B", pullRequestBranch(pullRequest), "FETCH_HEAD"); err != nil {
+		return Checkout{}, c.checkoutFailed(ctx, workingDirectory, pending, err)
+	}
+	if err := c.recordCheckout(ctx, workingDirectory, pullRequest); err != nil {
+		return Checkout{}, err
+	}
+
+	if notice := c.restoreStash(ctx, workingDirectory, pending); notice != nil {
+		notices = append(notices, *notice)
+	}
+	return Checkout{WorkingDirectory: workingDirectory, Notices: notices}, nil
+}
+
+// reconcileRemote makes origin agree with the repository the pull request
+// belongs to. A repository that was renamed or transferred redirects, so the
+// pull request head resolves to the same commit at the new location; any other
+// difference is reported instead of checking out another repository.
+func (c *GitHubController) reconcileRemote(ctx context.Context, directory, remoteURL string, pullRequest PullRequest) (*Notice, error) {
+	origin, err := c.runGit(ctx, directory, "remote", "get-url", "origin")
+	if err != nil {
+		return nil, err
+	}
+	if origin == remoteURL {
+		return nil, nil
+	}
+	// Another spelling of the same repository, such as an SSH remote the user
+	// added, needs no change.
+	if sameRepository(origin, remoteURL) {
+		return nil, nil
+	}
+
+	headRef := fmt.Sprintf("refs/pull/%d/head", pullRequest.Number)
+	requested, err := c.headCommit(ctx, directory, remoteURL, headRef)
+	if err != nil {
+		return nil, &CheckoutError{
+			Code:    CodeRemoteMismatch,
+			Message: fmt.Sprintf("working directory %s tracks %s, and the repository of the pull request %s could not be read: %v", directory, origin, remoteURL, err),
+			Remedy:  "Check the link. If the repository moved, remove the checkout and open the pull request again.",
+			Command: fmt.Sprintf("rm -rf %s", shellQuote(directory)),
+			Err:     err,
+		}
+	}
+	tracked, err := c.headCommit(ctx, directory, origin, headRef)
+	if err != nil || tracked != requested {
+		return nil, &CheckoutError{
+			Code:    CodeRemoteMismatch,
+			Message: fmt.Sprintf("working directory %s tracks %s, which does not hold the pull request of %s", directory, origin, remoteURL),
+			Remedy:  "Remove the checkout and open the pull request again.",
+			Command: fmt.Sprintf("rm -rf %s", shellQuote(directory)),
+			Err:     err,
+		}
+	}
+
+	moved := movedRemote(origin, remoteURL)
+	if _, err := c.runGit(ctx, directory, "remote", "set-url", "origin", moved); err != nil {
+		return nil, err
+	}
+	return &Notice{
+		Code:    NoticeRemoteUpdated,
+		Message: fmt.Sprintf("origin of %s now points at %s, which replaced %s", directory, moved, origin),
+	}, nil
+}
+
+// headCommit returns the commit a pull request head ref resolves to on a
+// remote.
+func (c *GitHubController) headCommit(ctx context.Context, directory, remote, headRef string) (string, error) {
+	output, err := c.runGit(ctx, directory, "ls-remote", "--quiet", remote, headRef)
+	if err != nil {
 		return "", err
 	}
-	branch := fmt.Sprintf("plot/pr-%d", pullRequest.Number)
-	if _, err := c.runGit(ctx, workingDirectory, "checkout", "--quiet", "-B", branch, "FETCH_HEAD"); err != nil {
-		return "", err
+	fields := strings.Fields(output)
+	if len(fields) == 0 {
+		return "", fmt.Errorf("%s has no %s", remote, headRef)
 	}
-	return workingDirectory, nil
+	return fields[0], nil
 }
 
 func (c *GitHubController) runGit(ctx context.Context, directory string, arguments ...string) (string, error) {

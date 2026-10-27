@@ -15,16 +15,16 @@ import (
 )
 
 type fakeOpener struct {
-	pullRequest      repository.PullRequest
-	workingDirectory string
-	err              error
-	calls            int
+	pullRequest repository.PullRequest
+	checkout    repository.Checkout
+	err         error
+	calls       int
 }
 
-func (f *fakeOpener) OpenInEditor(_ context.Context, pullRequest repository.PullRequest) (string, error) {
+func (f *fakeOpener) OpenInEditor(_ context.Context, pullRequest repository.PullRequest) (repository.Checkout, error) {
 	f.calls++
 	f.pullRequest = pullRequest
-	return f.workingDirectory, f.err
+	return f.checkout, f.err
 }
 
 func newTestHandler(opener Opener) *Handler {
@@ -32,7 +32,10 @@ func newTestHandler(opener Opener) *Handler {
 }
 
 func TestHandlerOpenInEditor(t *testing.T) {
-	opener := &fakeOpener{workingDirectory: "/workspace/name"}
+	opener := &fakeOpener{checkout: repository.Checkout{
+		WorkingDirectory: "/workspace/name",
+		Notices:          []repository.Notice{{Code: repository.NoticeStashKept, Message: "changes stay in the stash"}},
+	}}
 	handler := newTestHandler(opener)
 
 	request := httptest.NewRequest(http.MethodGet, "/open?repository=owner/name&pull_request=7", nil)
@@ -53,8 +56,10 @@ func TestHandlerOpenInEditor(t *testing.T) {
 	if err := json.Unmarshal(recorder.Body.Bytes(), &result); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	want := NewOpenResult(opener.pullRequest, opener.workingDirectory)
-	if result != want {
+	want := NewOpenResult(opener.pullRequest, opener.checkout)
+	if result.Repository != want.Repository || result.PullRequest != want.PullRequest ||
+		result.WorkingDirectory != want.WorkingDirectory || len(result.Notices) != 1 ||
+		result.Notices[0].Code != repository.NoticeStashKept {
 		t.Fatalf("result = %+v, want %+v", result, want)
 	}
 }
@@ -94,6 +99,126 @@ func TestHandlerReportsOpenError(t *testing.T) {
 	}
 	if !strings.Contains(recorder.Body.String(), "checkout failed") {
 		t.Fatalf("response = %q, want the error", recorder.Body.String())
+	}
+}
+
+func TestHandlerReportsCheckoutFailureDetails(t *testing.T) {
+	opener := &fakeOpener{err: &repository.CheckoutError{
+		Code:    repository.CodeRemoteMismatch,
+		Message: "working directory tracks another repository",
+		Remedy:  "Remove the checkout and open the pull request again.",
+		Command: "rm -rf /workspace/name",
+	}}
+	handler := newTestHandler(opener)
+
+	request := httptest.NewRequest(http.MethodGet, "/open?repository=owner/name&pull_request=7", nil)
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusInternalServerError)
+	}
+	var failure ErrorResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &failure); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if failure.Code != repository.CodeRemoteMismatch {
+		t.Fatalf("code = %q, want %q", failure.Code, repository.CodeRemoteMismatch)
+	}
+	if !strings.Contains(failure.Error, "tracks another repository") {
+		t.Fatalf("error = %q, want the failure message", failure.Error)
+	}
+	if !strings.Contains(failure.Remedy, "Remove the checkout") {
+		t.Fatalf("remedy = %q, want what to do", failure.Remedy)
+	}
+	if failure.Command != "rm -rf /workspace/name" {
+		t.Fatalf("command = %q, want the repair command", failure.Command)
+	}
+}
+
+func TestHandlerServesPageToBrowser(t *testing.T) {
+	opener := &fakeOpener{checkout: repository.Checkout{
+		WorkingDirectory: "/workspace/name",
+		Notices: []repository.Notice{{
+			Code:    repository.NoticeStashKept,
+			Message: "the uncommitted changes stay in the stash entry",
+			Command: "git -C /workspace/name stash pop",
+		}},
+	}}
+	handler := newTestHandler(opener)
+
+	request := httptest.NewRequest(http.MethodGet, "/open?repository=owner/name&pull_request=7", nil)
+	request.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", recorder.Code, http.StatusOK, recorder.Body.String())
+	}
+	if contentType := recorder.Header().Get("Content-Type"); !strings.HasPrefix(contentType, "text/html") {
+		t.Fatalf("Content-Type = %q, want text/html", contentType)
+	}
+	body := recorder.Body.String()
+	for _, want := range []string{
+		"Opened owner/name#7 in your editor",
+		"/workspace/name",
+		"the uncommitted changes stay in the stash entry",
+		"git -C /workspace/name stash pop",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("page does not contain %q:\n%s", want, body)
+		}
+	}
+}
+
+func TestHandlerServesFailurePageToBrowser(t *testing.T) {
+	opener := &fakeOpener{err: &repository.CheckoutError{
+		Code:    repository.CodeRemoteMismatch,
+		Message: "working directory /workspace/name tracks another repository",
+		Remedy:  "Remove the checkout and open the pull request again.",
+		Command: "rm -rf /workspace/name",
+	}}
+	handler := newTestHandler(opener)
+
+	request := httptest.NewRequest(http.MethodGet, "/open?repository=owner/name&pull_request=7", nil)
+	request.Header.Set("Accept", "text/html")
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusInternalServerError)
+	}
+	body := recorder.Body.String()
+	for _, want := range []string{
+		"Could not open owner/name#7",
+		"tracks another repository",
+		"Remove the checkout and open the pull request again.",
+		"rm -rf /workspace/name",
+		repository.CodeRemoteMismatch,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("page does not contain %q:\n%s", want, body)
+		}
+	}
+}
+
+func TestHandlerEscapesPageContent(t *testing.T) {
+	opener := &fakeOpener{err: &repository.CheckoutError{
+		Message: "<script>alert(1)</script>",
+	}}
+	handler := newTestHandler(opener)
+
+	request := httptest.NewRequest(http.MethodGet, "/open?repository=owner/name&pull_request=7", nil)
+	request.Header.Set("Accept", "text/html")
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+
+	body := recorder.Body.String()
+	if strings.Contains(body, "<script>alert(1)</script>") {
+		t.Fatalf("page does not escape the message:\n%s", body)
+	}
+	if !strings.Contains(body, "&lt;script&gt;alert(1)&lt;/script&gt;") {
+		t.Fatalf("page does not escape the message:\n%s", body)
 	}
 }
 
@@ -137,7 +262,7 @@ func TestHandlerUnknownPath(t *testing.T) {
 }
 
 func TestHandlerOpenInEditorAcceptsPullRequestURL(t *testing.T) {
-	opener := &fakeOpener{workingDirectory: "/workspace/name"}
+	opener := &fakeOpener{checkout: repository.Checkout{WorkingDirectory: "/workspace/name"}}
 	handler := newTestHandler(opener)
 
 	request := httptest.NewRequest(http.MethodGet, "/open?url=https%3A%2F%2Fgithub.com%2FPlotCustomer%2Fmenu%2Fpull%2F6", nil)

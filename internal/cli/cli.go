@@ -145,13 +145,35 @@ func (r *Runner) runSchemeURL(ctx context.Context, rawURL string) int {
 		fmt.Fprintf(r.stderr, "plot-launcher: %v\n", err)
 		return 2
 	}
-	workingDirectory, err := r.launcher.OpenInEditor(ctx, pullRequest)
+	checkout, err := r.launcher.OpenInEditor(ctx, pullRequest)
 	if err != nil {
-		fmt.Fprintf(r.stderr, "plot-launcher: %v\n", err)
+		r.writeOpenFailure(err)
 		return 1
 	}
-	fmt.Fprintln(r.stdout, workingDirectory)
+	for _, notice := range checkout.Notices {
+		fmt.Fprintf(r.stderr, "plot-launcher: %s\n", notice.Message)
+		if notice.Command != "" {
+			fmt.Fprintf(r.stderr, "plot-launcher: run %s\n", notice.Command)
+		}
+	}
+	fmt.Fprintln(r.stdout, checkout.WorkingDirectory)
 	return 0
+}
+
+// writeOpenFailure reports a failed open request, with what to do about it
+// when the failure says so.
+func (r *Runner) writeOpenFailure(err error) {
+	fmt.Fprintf(r.stderr, "plot-launcher: %v\n", err)
+	var checkoutError *repository.CheckoutError
+	if !errors.As(err, &checkoutError) {
+		return
+	}
+	if checkoutError.Remedy != "" {
+		fmt.Fprintf(r.stderr, "plot-launcher: %s\n", checkoutError.Remedy)
+	}
+	if checkoutError.Command != "" {
+		fmt.Fprintf(r.stderr, "plot-launcher: run %s\n", checkoutError.Command)
+	}
 }
 
 func (r *Runner) runSettings(args []string) int {

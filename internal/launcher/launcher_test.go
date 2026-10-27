@@ -22,18 +22,18 @@ func (f *fakeSettings) Load() (settings.LauncherSettings, error) {
 }
 
 type fakeRepositories struct {
-	pullRequest      repository.PullRequest
-	baseDirectory    string
-	workingDirectory string
-	err              error
-	calls            int
+	pullRequest   repository.PullRequest
+	baseDirectory string
+	checkout      repository.Checkout
+	err           error
+	calls         int
 }
 
-func (f *fakeRepositories) CheckoutPRAndPrepareWorkingDirectory(_ context.Context, pullRequest repository.PullRequest, baseDirectory string) (string, error) {
+func (f *fakeRepositories) CheckoutPRAndPrepareWorkingDirectory(_ context.Context, pullRequest repository.PullRequest, baseDirectory string) (repository.Checkout, error) {
 	f.calls++
 	f.pullRequest = pullRequest
 	f.baseDirectory = baseDirectory
-	return f.workingDirectory, f.err
+	return f.checkout, f.err
 }
 
 type fakeEditor struct {
@@ -52,17 +52,21 @@ func (f *fakeEditor) Launch(_ context.Context, command, directory string) error 
 
 func TestOpenInEditor(t *testing.T) {
 	settingsReader := &fakeSettings{loaded: settings.LauncherSettings{BaseDirectory: "/base", Editor: "code --wait"}}
-	repositories := &fakeRepositories{workingDirectory: "/base/name"}
+	notice := repository.Notice{Code: repository.NoticeStashKept, Message: "changes stay in the stash"}
+	repositories := &fakeRepositories{checkout: repository.Checkout{WorkingDirectory: "/base/name", Notices: []repository.Notice{notice}}}
 	editor := &fakeEditor{}
 	plotLauncher := New(settingsReader, repositories, editor)
 
 	pullRequest := repository.PullRequest{Owner: "owner", Name: "name", Number: 7}
-	workingDirectory, err := plotLauncher.OpenInEditor(context.Background(), pullRequest)
+	checkout, err := plotLauncher.OpenInEditor(context.Background(), pullRequest)
 	if err != nil {
 		t.Fatalf("OpenInEditor: %v", err)
 	}
-	if workingDirectory != repositories.workingDirectory {
-		t.Fatalf("working directory = %q, want %q", workingDirectory, repositories.workingDirectory)
+	if checkout.WorkingDirectory != repositories.checkout.WorkingDirectory {
+		t.Fatalf("working directory = %q, want %q", checkout.WorkingDirectory, repositories.checkout.WorkingDirectory)
+	}
+	if len(checkout.Notices) != 1 || checkout.Notices[0] != notice {
+		t.Fatalf("notices = %+v, want %+v", checkout.Notices, []repository.Notice{notice})
 	}
 	if repositories.pullRequest != pullRequest {
 		t.Fatalf("repository pull request = %+v, want %+v", repositories.pullRequest, pullRequest)
@@ -73,7 +77,7 @@ func TestOpenInEditor(t *testing.T) {
 	if editor.calls != 1 {
 		t.Fatalf("editor calls = %d, want 1", editor.calls)
 	}
-	if editor.command != "code --wait" || editor.directory != repositories.workingDirectory {
+	if editor.command != "code --wait" || editor.directory != repositories.checkout.WorkingDirectory {
 		t.Fatalf("editor launched with %q in %q", editor.command, editor.directory)
 	}
 }
@@ -144,7 +148,7 @@ func TestOpenInEditorPropagatesErrors(t *testing.T) {
 		editorError := errors.New("editor failed")
 		plotLauncher := New(
 			&fakeSettings{loaded: settings.LauncherSettings{BaseDirectory: "/base", Editor: "code"}},
-			&fakeRepositories{workingDirectory: "/base/name"},
+			&fakeRepositories{checkout: repository.Checkout{WorkingDirectory: "/base/name"}},
 			&fakeEditor{err: editorError},
 		)
 		_, err := plotLauncher.OpenInEditor(context.Background(), repository.PullRequest{Owner: "owner", Name: "name", Number: 7})

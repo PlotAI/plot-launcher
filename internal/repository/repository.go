@@ -76,8 +76,72 @@ func splitRepository(repositoryName string) (string, string, error) {
 	return parts[0], parts[1], nil
 }
 
+// Codes of the recoveries a Repository Controller can report in a Notice.
+const (
+	// NoticeStashKept reports uncommitted changes that were set aside and
+	// could not be restored on the checked out pull request.
+	NoticeStashKept = "stash_kept"
+	// NoticeRemoteUpdated reports a working directory whose origin was
+	// pointed at the repository's new location.
+	NoticeRemoteUpdated = "remote_updated"
+	// NoticeLocalCommitsKept reports commits that were moved off the pull
+	// request branch before it was reset.
+	NoticeLocalCommitsKept = "local_commits_kept"
+)
+
+// Codes of the failures a Repository Controller can report in a
+// CheckoutError.
+const (
+	// CodeWorkingTree reports uncommitted changes that could not be set
+	// aside before the branch switch.
+	CodeWorkingTree = "working_tree"
+	// CodeRemoteMismatch reports a working directory that tracks another
+	// repository than the requested one.
+	CodeRemoteMismatch = "remote_mismatch"
+	// CodeLocalCommits reports commits that could not be moved off the pull
+	// request branch before it was reset.
+	CodeLocalCommits = "local_commits"
+)
+
+// Notice reports a recovery performed on a working directory, so the caller
+// can tell the user what changed behind their back. Command, when set, is the
+// command that inspects or undoes the recovery.
+type Notice struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+	Command string `json:"command,omitempty"`
+}
+
+// Checkout is a prepared working directory and the recoveries that preparing
+// it required.
+type Checkout struct {
+	WorkingDirectory string
+	Notices          []Notice
+}
+
+// CheckoutError reports a checkout failure in terms the user can act on: a
+// stable code, a message that says what went wrong, what to do about it, and
+// the command that does it.
+type CheckoutError struct {
+	Code    string
+	Message string
+	Remedy  string
+	Command string
+	Err     error
+}
+
+// Error returns the message for the user.
+func (e *CheckoutError) Error() string {
+	return e.Message
+}
+
+// Unwrap returns the failure that caused the checkout to fail.
+func (e *CheckoutError) Unwrap() error {
+	return e.Err
+}
+
 // Controller is the Repository Controller: it checks out a pull request and
 // prepares its working directory.
 type Controller interface {
-	CheckoutPRAndPrepareWorkingDirectory(ctx context.Context, pullRequest PullRequest, baseDirectory string) (string, error)
+	CheckoutPRAndPrepareWorkingDirectory(ctx context.Context, pullRequest PullRequest, baseDirectory string) (Checkout, error)
 }
